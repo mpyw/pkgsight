@@ -12,6 +12,7 @@ import type { Layout } from "./layout";
 import type { View } from "./tree";
 import { nodeTypes, type Emphasis, type MapNode } from "./nodes";
 import { edgeTypes, type Flow, type RouteEdgeType } from "./RouteEdge";
+import { ports } from "../ports";
 
 interface Props {
   view: View;
@@ -67,6 +68,7 @@ export function MapCanvas({
           width: b.width,
           height: b.height,
           style: { width: b.width, height: b.height },
+          handles: ports(b.width, b.height, true),
           data: { v, emphasis, onToggle },
           draggable: false,
           zIndex: v.type === "container" ? 0 : 1,

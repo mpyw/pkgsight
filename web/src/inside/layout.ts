@@ -19,6 +19,7 @@ const partition: Record<INode["kind"], number> = {
   in: 0,
   func: 1,
   type: 1,
+  file: 1,
   out: 2,
 };
 
@@ -30,16 +31,41 @@ export function textWidth(text: string, latin: number): number {
   return w;
 }
 
+// STUB_ROW is the height of the row of tags for the hubs a node calls.
+const STUB_ROW = 18;
+
+// container reports whether n holds other nodes: a type, or an open file.
+export function container(n: INode): boolean {
+  return n.kind === "type" || (n.kind === "file" && n.open === true);
+}
+
 function size(n: INode, summary?: string): { width: number; height: number } {
-  const label = textWidth(n.label, 7.6) + (n.folded ? 34 : 0);
+  const label =
+    textWidth(n.label, 7.6) +
+    (n.folded ? 34 : 0) +
+    (n.count ? 52 : 0) +
+    (n.hub ? 40 : 0);
+  const stubs = n.stubs
+    ? textWidth(n.stubs.map((s) => `→ ${s.label}`).join("  "), 6.6) +
+      n.stubs.length * 12 +
+      28
+    : 0;
+  const extra = n.stubs ? STUB_ROW : 0;
   if (n.kind !== "func")
-    return { width: Math.min(300, Math.max(120, label + 32)), height: 36 };
+    return {
+      width: Math.max(
+        Math.min(300, Math.max(120, label + 32)),
+        Math.min(420, stubs),
+      ),
+      height: 36 + extra,
+    };
   let width = Math.min(320, Math.max(140, label + 40));
+  width = Math.max(width, Math.min(420, stubs));
   if (summary) {
     width = Math.max(width, Math.min(340, textWidth(summary, 6.2) + 32));
-    return { width, height: 54 };
+    return { width, height: 54 + extra };
   }
-  return { width, height: 36 };
+  return { width, height: 36 + extra };
 }
 
 // layoutInside places the functions left to right along their calls, with
@@ -70,16 +96,15 @@ export async function layoutInside(
   };
   const elkNodes = new Map<string, ElkNode>();
   for (const n of g.nodes) {
-    const e: ElkNode =
-      n.kind === "type"
-        ? {
-            id: n.id,
-            children: [],
-            layoutOptions: {
-              "elk.padding": `[top=${TYPE_HEADER + 10},left=12,bottom=12,right=12]`,
-            },
-          }
-        : { id: n.id, ...size(n, summaries.get(n.id)) };
+    const e: ElkNode = container(n)
+      ? {
+          id: n.id,
+          children: [],
+          layoutOptions: {
+            "elk.padding": `[top=${TYPE_HEADER + 10},left=12,bottom=12,right=12]`,
+          },
+        }
+      : { id: n.id, ...size(n, summaries.get(n.id)) };
     if (!n.parentId)
       e.layoutOptions = {
         ...e.layoutOptions,

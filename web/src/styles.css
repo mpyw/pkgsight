@@ -1360,6 +1360,10 @@ body.resizing {
   border-color: var(--c);
 }
 
+.ibox.func .top .name {
+  margin-right: auto;
+}
+
 .ibox.func .top {
   display: flex;
   align-items: center;
@@ -1412,6 +1416,95 @@ body.resizing {
   font-family: var(--mono);
   font-size: 12.5px;
   font-weight: 600;
+}
+
+.ibox .hub {
+  flex: none;
+  padding: 0 5px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--in) 18%, transparent);
+  color: var(--in);
+  font-size: 10.5px;
+}
+
+.ibox .stubs {
+  display: flex;
+  gap: 4px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.ibox .stub {
+  padding: 0 5px;
+  border-radius: 4px;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 10.5px;
+}
+
+.ibox .stub.from {
+  color: var(--in);
+}
+
+.ibox.file.closed {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  padding: 0 10px 0 12px;
+  background: color-mix(in srgb, var(--c) 8%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--c) 35%, var(--border));
+  border-radius: 8px;
+  cursor: pointer;
+  box-shadow:
+    3px 3px 0 -1px var(--surface-2),
+    3px 3px 0 0 var(--border);
+}
+
+.ibox.file.closed:hover {
+  border-color: var(--c);
+}
+
+.ibox.file .top .name {
+  margin-right: auto;
+}
+
+.ibox.file .top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.ibox.file .count {
+  flex: none;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--c) 15%, transparent);
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.ibox.file.open {
+  background: color-mix(in srgb, var(--c) 3%, transparent);
+  border: 1px dashed color-mix(in srgb, var(--c) 40%, var(--border));
+  border-radius: 14px;
+}
+
+.ibox.file.open .header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 7px 12px;
+  background: none;
+  border: none;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  color: var(--c);
+  text-align: left;
+  cursor: pointer;
 }
 
 .ibox.type .kw {

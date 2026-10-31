@@ -7,7 +7,7 @@ import {
   ReactFlowProvider,
   useReactFlow,
 } from "@xyflow/react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { DataSource } from "../data/source";
 import type { FuncDetail } from "../data/types";
 import { useCallStatus } from "../data/useCallStatus";
@@ -19,16 +19,20 @@ import { Inline } from "../notes/NoteText";
 import { SkippedNote } from "../map/PackagePanel";
 import { summaryProps } from "../notes/stale";
 import { useNotesBook } from "../notes/useNotes";
-import { buildInside, type Inside } from "./graph";
+import { buildInside, GROUP_AT, type Inside } from "./graph";
 import { insideEdgeTypes, type InsideEdgeType } from "./InsideEdge";
-import { layoutInside, type InsideLayout } from "./layout";
+import { container, layoutInside, type InsideLayout } from "./layout";
 import { insideNodeTypes, type InsideNode } from "./nodes";
+import { ports } from "../ports";
 
 interface Props {
   source: DataSource;
   forest: Forest;
   // The package to look inside.
   path: string;
+  // The function picked, from the URL. One of another package is ignored.
+  fn?: string;
+  onPick: (fn: string | undefined) => void;
   // Back to the package map, with this package selected.
   onBack: () => void;
   onInside: (path: string) => void;
@@ -57,6 +61,8 @@ function InsideCanvas({
   source,
   forest,
   path,
+  fn,
+  onPick,
   onBack,
   onInside,
   onFlow,
@@ -65,8 +71,8 @@ function InsideCanvas({
   const [funcs, setFuncs] = useState<FuncDetail[]>();
   const [error, setError] = useState<string>();
   const [closures, setClosures] = useState(false);
-  const [selected, setSelected] = useState<string>();
   const notes = useNotesBook();
+  const selected = funcs?.some((f) => f.id === fn) ? fn : undefined;
 
   useEffect(() => {
     if (status?.state !== "ready") return;
@@ -80,9 +86,47 @@ function InsideCanvas({
     };
   }, [source, status, path]);
 
-  const g = useMemo(
+  // Every function, for the counts and to tell a large package.
+  const full = useMemo(
     () => (funcs ? buildInside(path, funcs, { closures }) : undefined),
     [path, funcs, closures],
+  );
+  const fnCount = full?.nodes.filter((n) => n.kind === "func").length ?? 0;
+  const large = fnCount > GROUP_AT;
+  // A large package starts with its files closed, and shows only the
+  // neighbors of the function picked.
+  const [open, setOpen] = useState<ReadonlySet<string>>(new Set());
+  const [focus, setFocus] = useState<boolean>();
+  const focusing = (focus ?? large) && selected !== undefined;
+  // The file of the function picked is open too, so the pick is on screen.
+  const pickedFile = funcs?.find((f) => f.id === selected)?.file;
+  const shownOpen = useMemo(
+    () =>
+      pickedFile === undefined || open.has(pickedFile)
+        ? open
+        : new Set([...open, pickedFile]),
+    [open, pickedFile],
+  );
+  const g = useMemo(
+    () =>
+      funcs
+        ? buildInside(path, funcs, {
+            closures,
+            open: large ? shownOpen : undefined,
+            focus: focusing ? selected : undefined,
+          })
+        : undefined,
+    [path, funcs, closures, large, shownOpen, focusing, selected],
+  );
+  const toggleFile = useCallback(
+    (file: string) =>
+      setOpen((prev) => {
+        const next = new Set(prev);
+        if (next.has(file)) next.delete(file);
+        else next.add(file);
+        return next;
+      }),
+    [],
   );
 
   // Lay out again only when a summary changes, not on every note.
@@ -123,7 +167,7 @@ function InsideCanvas({
       (placed?.g.nodes ?? []).map((n): InsideNode => {
         const b = placed!.layout.boxes.get(n.id)!;
         let emphasis: Emphasis = "plain";
-        if (selected !== undefined && n.kind !== "type")
+        if (selected !== undefined && !container(n))
           emphasis =
             n.id === selected
               ? "selected"
@@ -138,6 +182,7 @@ function InsideCanvas({
           width: b.width,
           height: b.height,
           style: { width: b.width, height: b.height },
+          handles: ports(b.width, b.height),
           data: {
             n,
             emphasis,
@@ -145,12 +190,13 @@ function InsideCanvas({
             summary: notes?.funcs[n.id]?.summary,
             stale: notes?.funcs[n.id]?.stale,
             lang: notes?.lang,
+            onToggle: toggleFile,
           },
           draggable: false,
-          zIndex: n.kind === "type" ? 0 : 1,
+          zIndex: n.kind === "file" && n.open ? 0 : n.kind === "type" ? 1 : 2,
         };
       }),
-    [placed, selected, linked, path, notes],
+    [placed, selected, linked, path, notes, toggleFile],
   );
 
   const edges = useMemo(
@@ -211,10 +257,11 @@ function InsideCanvas({
   const skipped = status?.skipped?.find((s) => s.path === path);
   const pkgNote = notes?.packages[path];
   const sel = funcs?.find((f) => f.id === selected);
-  const fnCount = g?.nodes.filter((n) => n.kind === "func").length ?? 0;
-  const callCount =
-    g?.edges.filter((e) => !e.source.includes(":") && !e.target.includes(":"))
-      .length ?? 0;
+  const callCount = full?.calls ?? 0;
+  const files = useMemo(
+    () => [...new Set(funcs?.map((f) => f.file ?? ""))],
+    [funcs],
+  );
 
   return (
     <div className="view inside">
@@ -249,7 +296,26 @@ function InsideCanvas({
           <span className="dot lib" />
           Closures
         </button>
-        {g && (
+        <button
+          className="chip"
+          aria-pressed={focus ?? large}
+          onClick={() => setFocus(!(focus ?? large))}
+          title="Show only the function picked and those it touches"
+        >
+          <span className="dot lib" />
+          Focus
+        </button>
+        {large && !focusing && (
+          <>
+            <button className="chip" onClick={() => setOpen(new Set(files))}>
+              Open all files
+            </button>
+            <button className="chip" onClick={() => setOpen(new Set())}>
+              Close all files
+            </button>
+          </>
+        )}
+        {full && (
           <span className="stats">
             {fnCount} functions · {callCount} calls inside
           </span>
@@ -286,10 +352,12 @@ function InsideCanvas({
             edgeTypes={insideEdgeTypes}
             onNodeClick={(_, node) => {
               const n = (node as InsideNode).data.n;
-              if (n.kind === "func") setSelected(n.id);
-              else if (n.pkg) onInside(n.pkg);
+              if (n.kind === "func") onPick(n.id);
+              else if (n.kind === "file") {
+                if (!n.open) toggleFile(n.file ?? "");
+              } else if (n.pkg) onInside(n.pkg);
             }}
-            onPaneClick={() => setSelected(undefined)}
+            onPaneClick={() => onPick(undefined)}
             nodesConnectable={false}
             elementsSelectable={false}
             minZoom={0.05}
@@ -309,7 +377,7 @@ function InsideCanvas({
           isRoot={false}
           onRoot={onFlow}
           onShowPackage={onBack}
-          onClose={() => setSelected(undefined)}
+          onClose={() => onPick(undefined)}
         />
       )}
     </div>

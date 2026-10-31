@@ -179,6 +179,35 @@ describe("FlowView tree", () => {
     expect(screen.getByText(/this is a leaf/)).toBeTruthy();
   });
 
+  it("starts afresh on a new root, keeping the library switch", async () => {
+    const r = show(new FakeSource(), main.id);
+    await waitFor(() => expect(nodeOf("Run")).toBeTruthy());
+    fireEvent.click(screen.getByText("Library calls"));
+    fireEvent.click(nodeOf("Run")!);
+    await waitFor(() => expect(nodeOf("Run$1")).toBeTruthy());
+    // The root changes from outside, as the back button does.
+    r.rerender(
+      <NotesContext.Provider value={notesJa}>
+        <FlowView
+          source={new FakeSource()}
+          root={run.id}
+          onRoot={r.onRoot}
+          onShowPackage={r.onShowPackage}
+        />
+      </NotesContext.Provider>,
+    );
+    await waitFor(() =>
+      expect(document.querySelector(".panel h2")!.textContent).toBe("Run"),
+    );
+    expect(nodeOf("main")).toBeUndefined();
+    expect(
+      screen
+        .getByText("Library calls")
+        .closest("button")!
+        .getAttribute("aria-pressed"),
+    ).toBe("true");
+  });
+
   it("starts again from a caller, and closes the panel", async () => {
     const { onRoot, onShowPackage } = show(new FakeSource(), run.id);
     await waitFor(() =>

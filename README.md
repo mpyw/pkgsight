@@ -94,7 +94,7 @@ When you save a file, the browser shows the new code in a few seconds, and keeps
 
 ![The package map of pkgsight](docs/assets/package-map.png)
 
-Double-click a package to see the functions inside it and the calls between them.
+Double-click a package to see the functions inside it and the calls between them. A large package starts with one box per file. Click a file to open it. Click a function to see only it and the functions it calls or is called by.
 
 ![Inside the notes package of pkgsight](docs/assets/inside.png)
 

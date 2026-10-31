@@ -4,12 +4,13 @@ import {
   type EdgeProps,
   type NodeProps,
 } from "@xyflow/react";
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 import { details, run } from "../test/fake";
 import type { IEdge, INode } from "./graph";
 import { InsideEdge, type InsideEdgeType } from "./InsideEdge";
 import {
+  FileBox,
   FuncBox,
   PackagePort,
   shortPath,
@@ -166,5 +167,91 @@ describe("InsideEdge", () => {
       </svg>,
     );
     expect(none.container.querySelector("g")).toBeNull();
+  });
+});
+
+describe("files and hubs", () => {
+  it("draws a closed file with its count, hub and tags", () => {
+    const { container } = wrap(
+      <FileBox
+        {...props(
+          {
+            id: "file:a/x.go",
+            kind: "file",
+            label: "x.go",
+            file: "a/x.go",
+            count: 3,
+            hub: 6,
+            stubs: [
+              { id: "f:y", label: "y.go" },
+              { id: "in:ex.com/app/cmd", label: "cmd", from: true },
+            ],
+          },
+          { emphasis: "dim" },
+        )}
+      />,
+    );
+    expect(container.querySelector(".ibox")!.className).toBe(
+      "ibox file closed dim",
+    );
+    expect(screen.getByText("3")).toBeTruthy();
+    expect(screen.getByText("←6")).toBeTruthy();
+    expect(screen.getByTitle("Calls y.go").textContent).toBe("→ y.go");
+    expect(screen.getByTitle("Called from ex.com/app/cmd").textContent).toBe(
+      "cmd →",
+    );
+  });
+
+  it("closes an open file from its header", () => {
+    const onToggle = vi.fn();
+    wrap(
+      <FileBox
+        {...props(
+          {
+            id: "file:a/x.go",
+            kind: "file",
+            label: "x.go",
+            file: "a/x.go",
+            open: true,
+          },
+          { onToggle },
+        )}
+      />,
+    );
+    fireEvent.click(screen.getByTitle("Close the file"));
+    expect(onToggle).toHaveBeenCalledWith("a/x.go");
+    // A file node of generated code has no file.
+    wrap(
+      <FileBox
+        {...props(
+          { id: "file:", kind: "file", label: "(generated)", open: true },
+          { onToggle },
+        )}
+      />,
+    );
+    fireEvent.click(screen.getAllByTitle("Close the file")[1]);
+    expect(onToggle).toHaveBeenLastCalledWith("");
+    // Without a handler, the header does nothing.
+    wrap(
+      <FileBox
+        {...props({ id: "file:b", kind: "file", label: "b.go", open: true })}
+      />,
+    );
+    fireEvent.click(screen.getAllByTitle("Close the file")[2]);
+  });
+
+  it("counts the callers of a hub function, and of a package calling in", () => {
+    wrap(
+      <FuncBox {...props({ id: "h", kind: "func", label: "err", hub: 9 })} />,
+    );
+    expect(screen.getByTitle(/Called from 9 places/).textContent).toBe("←9");
+    wrap(
+      <PackagePort
+        {...props({ id: "in:p", kind: "in", label: "p", pkg: "p", hub: 4 })}
+      />,
+    );
+    expect(
+      screen.getByTitle("Calls into 4 boxes, tagged on them").textContent,
+    ).toBe("4");
   });
 });

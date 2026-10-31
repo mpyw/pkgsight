@@ -6,11 +6,13 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
+import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
-import type { Notes } from "../data/types";
+import type { FuncDetail, Notes } from "../data/types";
 import { buildForest } from "../map/tree";
 import { NotesContext } from "../notes/useNotes";
 import { FakeSource, graph, notesJa } from "../test/fake";
+import { GROUP_AT } from "./graph";
 import { InsideView } from "./InsideView";
 
 const forest = buildForest(graph);
@@ -25,11 +27,34 @@ function show(
   source = new FakeSource(),
   path = server,
   notes: Notes | undefined = notesJa,
+  fn?: string,
 ) {
-  const h = { onBack: vi.fn(), onInside: vi.fn(), onFlow: vi.fn() };
+  const h = {
+    onBack: vi.fn(),
+    onInside: vi.fn(),
+    onFlow: vi.fn(),
+    onPick: vi.fn(),
+  };
+  // Holds the pick, as the URL does in the app.
+  function Picking() {
+    const [picked, setPicked] = useState(fn);
+    return (
+      <InsideView
+        source={source}
+        forest={forest}
+        path={path}
+        {...h}
+        fn={picked}
+        onPick={(id) => {
+          h.onPick(id);
+          setPicked(id);
+        }}
+      />
+    );
+  }
   const r = render(
     <NotesContext.Provider value={notes}>
-      <InsideView source={source} forest={forest} path={path} {...h} />
+      <Picking />
     </NotesContext.Provider>,
   );
   return { ...r, ...h };
@@ -129,5 +154,99 @@ describe("InsideView", () => {
     expect(await screen.findByText("boom")).toBeTruthy();
     show(new FakeSource({ failPackage: true }));
     expect(await screen.findByText(/503/)).toBeTruthy();
+  });
+});
+
+// big is a package too large to show every function at first: F0 in a.go
+// calls F1 in b.go, and the rest call nothing.
+const big = "ex.com/app/big";
+const bigFuncs: FuncDetail[] = Array.from({ length: GROUP_AT + 1 }, (_, i) => ({
+  id: `${big}.F${i}`,
+  name: `F${i}`,
+  pkg: big,
+  pkgName: "big",
+  kind: "own",
+  file: i % 2 === 0 ? "big/a.go" : "big/b.go",
+  calls: [],
+  callers: [],
+}));
+bigFuncs[0].calls = [
+  { to: bigFuncs[1], mode: "call", dispatch: "static", lines: [3] },
+];
+bigFuncs[1].callers = [bigFuncs[0]];
+
+class BigSource extends FakeSource {
+  packageFuncs = () => Promise.resolve(bigFuncs);
+}
+
+describe("InsideView of a large package", () => {
+  it("starts with its files closed, and opens them", async () => {
+    show(new BigSource(), big);
+    await waitFor(() => expect(boxOf("a.go")).toBeTruthy());
+    expect(boxOf("F0")).toBeUndefined();
+    expect(
+      screen.getByText(`${GROUP_AT + 1} functions · 1 calls inside`),
+    ).toBeTruthy();
+    fireEvent.click(boxOf("a.go")!);
+    await waitFor(() => expect(boxOf("F0")).toBeTruthy());
+    expect(boxOf("F1")).toBeUndefined();
+    // Clicking an open file does nothing; its header closes it.
+    fireEvent.click(boxOf("a.go")!);
+    expect(boxOf("F0")).toBeTruthy();
+    fireEvent.click(boxOf("a.go")!.querySelector(".header")!);
+    await waitFor(() => expect(boxOf("F0")).toBeUndefined());
+    fireEvent.click(screen.getByText("Open all files"));
+    await waitFor(() => expect(boxOf("F1")).toBeTruthy());
+    fireEvent.click(screen.getByText("Close all files"));
+    await waitFor(() => expect(boxOf("F1")).toBeUndefined());
+  });
+
+  it("shows only the neighbors of the function picked, unless asked not to", async () => {
+    show(new BigSource(), big);
+    await waitFor(() => expect(boxOf("a.go")).toBeTruthy());
+    fireEvent.click(boxOf("a.go")!);
+    await waitFor(() => expect(boxOf("F0")).toBeTruthy());
+    fireEvent.click(boxOf("F0")!);
+    await waitFor(() => expect(boxOf("F1")).toBeTruthy());
+    expect(boxOf("F2")).toBeUndefined();
+    expect(screen.queryByText("Open all files")).toBeNull();
+    // Focus off: the files come back, with the pick dimming the rest.
+    fireEvent.click(screen.getByText("Focus"));
+    await waitFor(() => expect(boxOf("F2")).toBeTruthy());
+    expect(boxOf("b.go")!.querySelector(".ibox")!.className).toContain(
+      "linked",
+    );
+    expect(boxOf("F2")!.querySelector(".ibox")!.className).toContain("dim");
+    fireEvent.click(document.querySelector(".react-flow__pane")!);
+    expect(document.querySelector(".panel")).toBeNull();
+  });
+
+  it("picks the function the URL names, and ignores one of another package", async () => {
+    show(new FakeSource(), server, notesJa, `${server}.Run`);
+    await waitFor(() =>
+      expect(boxOf("Run")!.querySelector(".ibox")!.className).toContain(
+        "selected",
+      ),
+    );
+    show(new FakeSource(), server, notesJa, "ex.com/app/cmd/app.main");
+    await waitFor(() => expect(boxOf("Serve")).toBeTruthy());
+    expect(document.querySelectorAll(".panel")).toHaveLength(1);
+  });
+
+  it("opens the file of the function picked", async () => {
+    show(new BigSource(), big, notesJa, `${big}.F2`);
+    await waitFor(() => expect(boxOf("F2")).toBeTruthy());
+    fireEvent.click(screen.getByText("Focus"));
+    await waitFor(() => expect(boxOf("b.go")).toBeTruthy());
+    expect(boxOf("F2")).toBeTruthy();
+    expect(boxOf("F1")).toBeUndefined();
+  });
+
+  it("lets a small package focus too", async () => {
+    show();
+    await waitFor(() => expect(boxOf("Run")).toBeTruthy());
+    fireEvent.click(screen.getByText("Focus"));
+    fireEvent.click(boxOf("Run")!);
+    await waitFor(() => expect(boxOf("Serve")).toBeTruthy());
   });
 });

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it } from "vitest";
-import { readPlace, writePlace } from "./location";
+import { moves, readPlace, writePlace } from "./location";
 
 afterEach(() => history.replaceState(null, "", "/"));
 
@@ -14,6 +14,9 @@ describe("readPlace", () => {
     expect(readPlace()).toEqual({ view: "inside", pkg: "a/b", fn: "a.F" });
     history.replaceState(null, "", "#view=nope");
     expect(readPlace().view).toBe("map");
+    // Inside no package is the map.
+    history.replaceState(null, "", "#view=inside&fn=a.F");
+    expect(readPlace()).toEqual({ view: "map", fn: "a.F" });
   });
 });
 
@@ -34,5 +37,43 @@ describe("writePlace", () => {
     writePlace({ view: "flow", fn: "x" });
     expect(history.length).toBe(before);
     expect(readPlace()).toEqual({ view: "flow", fn: "x" });
+  });
+});
+
+describe("history", () => {
+  it("adds an entry for a move, and replaces it for a pick", () => {
+    const before = history.length;
+    writePlace({ view: "map", pkg: "a" });
+    expect(history.length).toBe(before);
+    writePlace({ view: "inside", pkg: "a" }, true);
+    expect(history.length).toBe(before + 1);
+    writePlace({ view: "map" }, true);
+    expect(location.hash).toBe("");
+  });
+
+  it("tells a move from a pick", () => {
+    expect(moves({ view: "map" }, { view: "map", pkg: "a" })).toBe(false);
+    expect(moves({ view: "map" }, { view: "inside", pkg: "a" })).toBe(true);
+    expect(
+      moves({ view: "inside", pkg: "a" }, { view: "inside", pkg: "b" }),
+    ).toBe(true);
+    expect(
+      moves(
+        { view: "inside", pkg: "a" },
+        { view: "inside", pkg: "a", fn: "f" },
+      ),
+    ).toBe(false);
+    expect(
+      moves(
+        { view: "inside", pkg: "a", fn: "f" },
+        { view: "inside", pkg: "a", fn: "g" },
+      ),
+    ).toBe(true);
+    expect(moves({ view: "flow", fn: "f" }, { view: "flow", fn: "g" })).toBe(
+      true,
+    );
+    expect(
+      moves({ view: "flow", fn: "f" }, { view: "flow", fn: "f", pkg: "a" }),
+    ).toBe(false);
   });
 });

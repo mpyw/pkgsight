@@ -19,7 +19,7 @@ The call graph comes from SSA of the module's own packages. Dependencies are loa
 | Made inside a dependency | No |
 | Through reflection | No |
 
-A function handed to `sync.WaitGroup.Go` or `errgroup.Group.Go` is a `go` call. A guess is listed among the caller's calls, but the callee does not list the caller. Otherwise every type with a `Write` or an `Error` method would list every caller of the interface. A call the compiler wrote, such as the yield of a range over a function, has no line.
+A function handed to `sync.WaitGroup.Go` or `errgroup.Group.Go` is a `go` call. A guess is listed among the caller's calls, but the callee does not list the caller. Otherwise every type with a `Write` or an `Error` method would list every caller of the interface. A call the compiler wrote, such as the yield of a range over a function, has no line. The body of such a loop is a function the compiler wrote too. Its calls belong to the function that holds the loop.
 
 An entry point is where a reader may start a call flow.
 
@@ -30,7 +30,14 @@ An entry point is where a reader may start a call flow.
 | `interface` | A method that an interface of another module requires, from a type the module converts to it. Nothing in the module calls it | `ServeHTTP` |
 | `uncalled` | An exported function that nothing in the module calls | A library's API |
 
-`String` and `Error` never make an `interface` entry. Nearly every type has them. A function handed to a library as an argument, as with `http.HandleFunc`, is no entry: the call flow reaches it from the caller, through the library.
+Some methods never make an `interface` entry.
+
+| Method | Why |
+| --- | --- |
+| `String` and `Error` | Nearly every type has them |
+| Unexported, like the marker that closes a sum type | Only its own package can call it |
+| One that only returns constants, like `Close() error { return nil }` | It shows nothing |
+ A function handed to a library as an argument, as with `http.HandleFunc`, is no entry: the call flow reaches it from the caller, through the library.
 
 ## Export
 
@@ -48,7 +55,7 @@ Images that notes show are embedded as data URLs. Search runs in the browser, as
 | View | Shows |
 | --- | --- |
 | Package map | Packages by directory, with import edges. Folded directories open on a click |
-| Inside a package | Its functions, with methods boxed by receiver type, and the calls between them. Callers from other packages sit on the left, callees on the right. Closures fold into their function unless **Closures** is on |
+| Inside a package | Its functions, with methods boxed by receiver type, and the calls between them. Callers from other packages sit on the left, callees on the right. Closures fold into their function unless **Closures** is on. A large package starts with its files closed |
 | Call flow | A tree of calls from one function. A function appears once per path that reaches it. Recursion stops at a function already on the path |
 
 Edges in the call flow and inside a package:
@@ -63,7 +70,23 @@ Edges in the call flow and inside a package:
 | Handed to a library function | Dotted purple | `via <function>` |
 | A guess | Dotted gray | `iface?` |
 
-The URL fragment holds the view: `#view=flow&fn=<id>`, `#view=inside&pkg=<path>`, or `#pkg=<path>` on the map.
+Inside a package, three things keep a large one readable.
+
+| Rule | When | What it does |
+| --- | --- | --- |
+| Files | More than 40 functions | Each file starts as one box, with the calls between files. A click opens it |
+| Hubs | A box called from many boxes: 8 with every function shown, and a quarter of the boxes, at least 5, with files | Its callers carry a tag `→ name` instead of a line each. The hub counts them, as `←9` |
+| Focus | A function is picked, with **Focus** on. It starts on for a large package | Only the function and those it calls or is called by stay, without files or hubs |
+
+With files, a package calling in to as many boxes as a hub has tags on them too, like `usecase →`.
+
+The URL fragment holds the view: `#view=flow&fn=<id>`, `#view=inside&pkg=<path>`, or `#pkg=<path>` on the map. Inside a package, `fn` is the function picked.
+
+| Click | History |
+| --- | --- |
+| To another view, another package inside, or another root of the call flow | A new entry, so the back button returns |
+| From one function to another inside a package | A new entry: focus redraws around it |
+| Picking a package on the map, or picking or dropping a function inside | Replaces the fragment |
 
 ## Notes
 

@@ -22,6 +22,7 @@ import {
   PLAIN,
   type FlowNode,
 } from "./tree";
+import { ports } from "../ports";
 
 interface Props {
   source: DataSource;
@@ -90,6 +91,14 @@ function Flow({ source, root, onRoot, onShowPackage }: Props) {
     new Set(root ? [root] : []),
   );
   const [selected, setSelected] = useState<string | undefined>(root);
+  // A new root, from the sidebar or the back button, starts the tree
+  // afresh. What was loaded and the library switch stay.
+  const [shownRoot, setShownRoot] = useState(root);
+  if (shownRoot !== root) {
+    setShownRoot(root);
+    setExpanded(new Set(root ? [root] : []));
+    setSelected(root);
+  }
   const [library, setLibrary] = useState(false);
   // The node to bring into view with its callees after it opens.
   const [follow, setFollow] = useState<string>();
@@ -125,6 +134,7 @@ function Flow({ source, root, onRoot, onShowPackage }: Props) {
 
   const start = useCallback(
     (id: string) => {
+      // The same root again starts its tree afresh too.
       setExpanded(new Set([id]));
       setSelected(id);
       onRoot(id);
@@ -186,6 +196,7 @@ function Flow({ source, root, onRoot, onShowPackage }: Props) {
         width: size.width,
         height: size.height,
         style: { width: size.width, height: size.height },
+        handles: ports(size.width, size.height),
         data: {
           n: p.node,
           summary: notes?.funcs[p.node.fn.id]?.summary,

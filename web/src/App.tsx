@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Toolbar } from "./components/Toolbar";
 import { anew, type DataSource } from "./data/source";
 import type { Graph } from "./data/types";
 import { FlowView } from "./flow/FlowView";
 import { InsideView } from "./inside/InsideView";
-import { readPlace, writePlace, type Place } from "./location";
+import { moves, readPlace, writePlace, type Place } from "./location";
 import { PackageMap } from "./map/PackageMap";
 import { AssetContext } from "./notes/Markdown";
 import { NotesContext, useNotes } from "./notes/useNotes";
@@ -33,7 +33,22 @@ function Explorer({ graph, source }: { graph: Graph; source: DataSource }) {
   const [place, setPlace] = useState<Place>(readPlace);
   const notes = useNotes(source);
 
-  useEffect(() => writePlace(place), [place]);
+  // A move to another view, package or function is a history entry, so
+  // the back button returns. Going back reads the place from the URL.
+  const written = useRef(place);
+  useEffect(() => {
+    writePlace(place, moves(written.current, place));
+    written.current = place;
+  }, [place]);
+  useEffect(() => {
+    // The URL already holds the place, so writing it must not push.
+    const back = () => {
+      written.current = readPlace();
+      setPlace(written.current);
+    };
+    addEventListener("popstate", back);
+    return () => removeEventListener("popstate", back);
+  }, []);
 
   const own = graph.packages.filter((p) => p.kind === "own");
   return (
@@ -60,6 +75,8 @@ function Explorer({ graph, source }: { graph: Graph; source: DataSource }) {
               source={source}
               forest={forest}
               path={place.pkg}
+              fn={place.fn}
+              onPick={(fn) => setPlace((p) => ({ ...p, fn }))}
               onBack={() => setPlace((p) => ({ ...p, view: "map" }))}
               onInside={(pkg) => setPlace((p) => ({ ...p, pkg }))}
               onFlow={(fn) => setPlace((p) => ({ ...p, view: "flow", fn }))}

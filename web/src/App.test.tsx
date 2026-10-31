@@ -88,6 +88,48 @@ describe("App", () => {
     );
   });
 
+  it("goes back to the view before with the back button", async () => {
+    history.replaceState(null, "", "#pkg=ex.com%2Fapp%2Finternal%2Fserver");
+    render(<App source={new FakeSource()} />);
+    const panel = await waitFor(() => {
+      const p = document.querySelector(".panel");
+      if (!p) throw new Error("no panel");
+      return p as HTMLElement;
+    });
+    fireEvent.click(within(panel).getByText("Look inside"));
+    expect(await screen.findByText("← Packages")).toBeTruthy();
+    history.back();
+    await waitFor(() =>
+      expect(location.hash).toBe("#pkg=ex.com%2Fapp%2Finternal%2Fserver"),
+    );
+    await waitFor(() => expect(screen.queryByText("← Packages")).toBeNull());
+    // Going back wrote nothing new, so forward still returns.
+    history.forward();
+    expect(await screen.findByText("← Packages")).toBeTruthy();
+  });
+
+  it("does not push when the URL it goes back to is written another way", async () => {
+    render(<App source={new FakeSource()} />);
+    await screen.findByRole("tab", { name: "Packages" });
+    // An entry written by hand, with its fields in another order.
+    history.pushState(
+      null,
+      "",
+      "#pkg=ex.com%2Fapp%2Finternal%2Fserver&view=inside",
+    );
+    history.back();
+    await waitFor(() => expect(location.hash).toBe(""));
+    const before = history.length;
+    history.forward();
+    expect(await screen.findByText("← Packages")).toBeTruthy();
+    await waitFor(() =>
+      expect(location.hash).toBe(
+        "#view=inside&pkg=ex.com%2Fapp%2Finternal%2Fserver",
+      ),
+    );
+    expect(history.length).toBe(before);
+  });
+
   it("opens the flow from a function in the package panel", async () => {
     history.replaceState(null, "", "#pkg=ex.com%2Fapp%2Finternal%2Fserver");
     render(<App source={new FakeSource()} />);

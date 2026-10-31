@@ -39,8 +39,44 @@ describe("layoutInside", () => {
       { id: "f", kind: "func", label: "f", folded: 2 },
       { id: "out:p", kind: "out", label: "a".repeat(100), pkg: "p" },
     ];
-    const l = await layoutInside({ nodes, edges: [] }, new Map());
+    const l = await layoutInside({ nodes, edges: [], calls: 0 }, new Map());
     expect(l.boxes.get("out:p")!.width).toBe(300);
     expect(l.boxes.get("f")!.width).toBe(140);
+  });
+});
+
+describe("layoutInside files and tags", () => {
+  it("sizes closed files, open files and nodes with tags", async () => {
+    const tags = [{ id: "h", label: "helper" }];
+    const nodes: INode[] = [
+      {
+        id: "file:a.go",
+        kind: "file",
+        label: "a.go",
+        file: "a.go",
+        count: 3,
+        hub: 6,
+        stubs: tags,
+      },
+      {
+        id: "file:b.go",
+        kind: "file",
+        label: "b.go",
+        file: "b.go",
+        open: true,
+      },
+      { id: "f", kind: "func", label: "f", parentId: "file:b.go", stubs: tags },
+      { id: "g", kind: "func", label: "g", parentId: "file:b.go", stubs: tags },
+    ];
+    const l = await layoutInside(
+      { nodes, edges: [], calls: 0 },
+      new Map([["g", "要約"]]),
+    );
+    expect(l.boxes.get("file:a.go")!.height).toBe(54);
+    expect(l.boxes.get("f")!.height).toBe(54);
+    expect(l.boxes.get("g")!.height).toBe(72);
+    // An open file holds its functions.
+    const b = l.boxes.get("file:b.go")!;
+    expect(b.height).toBeGreaterThan(54 + 72);
   });
 });

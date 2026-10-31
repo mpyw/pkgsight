@@ -75,10 +75,16 @@ Use `encoding/json/v2`, never v1.
 - `Server.Reload` swaps the package graph and the call graph under one lock, so no request sees one without the other. The MCP backend reads the package graph through a function for the same reason.
 - The frontend hands its views the data source under a new identity after a `code` event (`anew`). Every fetch lists the data source as a dependency, so all of them run again. Do not add a separate revision counter to effects: oxlint rejects dependencies an effect does not read.
 
+### React Flow
+
+- Every node carries `handles` from `ports`. Without them React Flow measures the handles in the page, and forgets them each time a node is passed anew, as on every note or pick. A node whose size stayed the same is not measured again, so its edges went missing until a reload. Do not drop `handles`.
+
 ### UI behavior that was asked for
 
 - In the call flow, a click on a node opens it and never closes it. The badge toggles it. Clicking back to a parent must not fold what was opened below it.
 - The package map and the inside view lay out again only when a summary changes. The map must hold still while an assistant writes function notes.
+- The back button undoes a move to another view, package or flow root (`moves` in `location.ts`). A pick on the map replaces the URL instead, or the back button would walk through every pick.
+- A large package inside starts with its files closed, draws hubs as tags, and shows only the neighbors of a picked function. One drawing of 200 functions and 300 calls was unreadable at any zoom.
 
 ## Workflow
 
