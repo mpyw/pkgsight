@@ -1577,6 +1577,15 @@ body.resizing {
   padding-left: 1.4em;
 }
 
+/* The page resets lists for its own link lists; notes keep their markers. */
+.md ul {
+  list-style: disc;
+}
+
+.md ol {
+  list-style: decimal;
+}
+
 .md li.task-list-item {
   list-style: none;
   margin-left: -1.2em;
