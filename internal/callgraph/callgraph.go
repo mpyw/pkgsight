@@ -138,29 +138,32 @@ func (b *builder) build() *Graph {
 		}
 
 		resolved := map[ssa.CallInstruction]bool{}
-		for _, e := range b.vta.Nodes[fn].Out {
-			for _, callee := range b.unwrap(e.Callee.Func, 0) {
-				add(e.Site, callee, false)
-				if b.isOwn(callee) {
-					resolved[e.Site] = true
-				}
-			}
-		}
-		if n := b.cha.Nodes[fn]; n != nil {
-			for _, e := range n.Out {
-				if e.Site == nil || !e.Site.Common().IsInvoke() || resolved[e.Site] {
-					continue
-				}
-				for _, callee := range b.unwrap(e.Callee.Func, 0) {
-					if b.isOwn(callee) {
-						add(e.Site, callee, true)
+		for _, part := range withLoopBodies(fn) {
+			if n := b.vta.Nodes[part]; n != nil {
+				for _, e := range n.Out {
+					for _, callee := range b.unwrap(e.Callee.Func, 0) {
+						add(e.Site, callee, false)
+						if b.isOwn(callee) {
+							resolved[e.Site] = true
+						}
 					}
 				}
 			}
-		}
-
-		for _, site := range callSites(fn) {
-			b.recordCallbacks(calls, site)
+			if n := b.cha.Nodes[part]; n != nil {
+				for _, e := range n.Out {
+					if e.Site == nil || !e.Site.Common().IsInvoke() || resolved[e.Site] {
+						continue
+					}
+					for _, callee := range b.unwrap(e.Callee.Func, 0) {
+						if b.isOwn(callee) {
+							add(e.Site, callee, true)
+						}
+					}
+				}
+			}
+			for _, site := range callSites(part) {
+				b.recordCallbacks(calls, site)
+			}
 		}
 
 		for _, c := range calls {
@@ -259,14 +262,16 @@ func (b *builder) libraryEntries(owned []*ssa.Function) map[*ssa.Function]model.
 					}
 					mset := b.prog.MethodSets.MethodSet(v.X.Type())
 					for m := range iface.Methods() {
-						if commonMethods[m.Name()] {
+						// Only the package itself can call an unexported
+						// method, such as the marker that closes a sum type.
+						if commonMethods[m.Name()] || !m.Exported() {
 							continue
 						}
 						sel := mset.Lookup(m.Pkg(), m.Name())
 						if sel == nil {
 							continue
 						}
-						if f := b.prog.MethodValue(sel); named(f) {
+						if f := b.prog.MethodValue(sel); named(f) && !idle(f) {
 							if _, handed := out[f]; !handed {
 								out[f] = model.EntryInterface
 							}
@@ -277,6 +282,26 @@ func (b *builder) libraryEntries(owned []*ssa.Function) map[*ssa.Function]model.
 		}
 	}
 	return out
+}
+
+// idle reports whether fn only returns constants, like a Close that returns
+// nil. As an entry it would show nothing.
+func idle(fn *ssa.Function) bool {
+	if len(fn.Blocks) != 1 {
+		return false
+	}
+	for _, instr := range fn.Blocks[0].Instrs {
+		ret, ok := instr.(*ssa.Return)
+		if !ok {
+			return false
+		}
+		for _, r := range ret.Results {
+			if _, ok := r.(*ssa.Const); !ok {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // funcOf returns the function a value is, or closes over. A function given
@@ -381,6 +406,20 @@ func (b *builder) recordCallbacks(calls map[callKey]*model.Call, site ssa.CallIn
 			b.record(calls, site, fn, model.Call{Mode: mode, Dispatch: model.DispatchDynamic, Through: through})
 		}
 	}
+}
+
+// withLoopBodies returns fn and the bodies of its loops over a function,
+// such as for m := range iface.Methods(). The compiler turns each body
+// into a synthetic function of its own, which is not an own function. The
+// code in it is fn's, so its calls are too.
+func withLoopBodies(fn *ssa.Function) []*ssa.Function {
+	out := []*ssa.Function{fn}
+	for _, anon := range fn.AnonFuncs {
+		if anon.Synthetic == "range-over-func yield" {
+			out = append(out, withLoopBodies(anon)...)
+		}
+	}
+	return out
 }
 
 func callSites(fn *ssa.Function) []ssa.CallInstruction {

@@ -36,7 +36,7 @@ packages:
 
       > [!WARNING]
       > 関数 ID（`builder.id`）は注釈の保存キー。形式を変えると、保存済みの注釈がすべて行き場を失う。
-    fingerprint: 6ca7ebb918479651
+    fingerprint: 7c843503b65a13d9
   github.com/mpyw/pkgsight/internal/freshness:
     summary: 注釈がまだ今のコードを説明しているか判定する
     doc: |-
@@ -159,28 +159,32 @@ funcs:
       3 段で組み立てる。
 
       1. 自前の関数を、ソースの位置順に集めて `Func` を作る。
-      2. 関数ごとに呼び出し先を集める。値の流れから分かったもの、それで見つからなかった interface 呼び出しへの推測、ライブラリに渡したコールバックの 3 種類。
+      2. 関数ごとに呼び出し先を集める。値の流れから分かったもの、それで見つからなかった interface 呼び出しへの推測、ライブラリに渡したコールバックの 3 種類。関数の中にある「関数を range で回すループ」の本体も、その関数の一部として読む。
       3. 呼び出し元と入口を決める。
 
       推測（`Maybe`）の辺は、呼び出し先の「呼び出し元」に数えない。数えると、`Write` や `Error` を持つすべての型に無関係な呼び出し元が並び、どれも入口にならなくなる（AGENTS.md）。
-    fingerprint: 87eb9492afa86a07
+    fingerprint: 72bc2e7abc9dfb4d
     lines:
       - offset: 8
         hash: 2d89858f
         text: 位置順に並べる。ID の衝突番号とパッケージ内の関数の並びが、これで実行ごとに変わらない
-      - offset: 27
-        hash: 27e31d71
+      - offset: 24
+        hash: 39b68bcf
+        text: '`for x := range seq` の本体は、コンパイラが別の関数（自前扱いされない合成関数）にする。本体に書いた呼び出しはこの関数のものなので、まとめて読む（withLoopBodies）'
+        kind: important
+      - offset: 30
+        hash: 5b38f711
         text: 自前の呼び出し先が 1 つでも見つかった呼び出しは「解決済み」。推測は、そうでない interface 呼び出しにだけ足す
-      - offset: 32
-        hash: 2dc86b47
+      - offset: 41
+        hash: 27e31d71
         text: ここが推測。そのメソッドを持つ自前の型をすべて候補にする（CHA）。依存パッケージを通る値は流れを追えないので、その穴を埋める
         kind: note
-      - offset: 55
+      - offset: 58
         hash: 3f39b379
         text: 推測の辺は呼び出し元に数えない。Write や Error を持つ全部の型に呼び出し元が並んでしまうため
         kind: important
       - offset: 83
-        hash: f6aa93f5
+        hash: e2509a04
         text: 入口は main と、モジュール内の誰からも呼ばれない公開関数。メソッドとクロージャは入口にしない
   (*github.com/mpyw/pkgsight/internal/callgraph.builder).build$2:
     summary: 1 つの呼び出しを、起動方法と解決方法付きで記録する
@@ -246,7 +250,13 @@ funcs:
       | 別モジュールの構造体のフィールドに入れる | `&analysis.Analyzer{Run: run}`、`Action: serveAction` | `handed` |
       | 別モジュールの関数型にして、その interface として渡す | `http.HandlerFunc(serve)` | `handed` |
       | 自前の型を別モジュールの interface に変換する | `ServeHTTP` | `interface` |
-    fingerprint: 3bc1cb246eaf47aa
+
+      interface の形では、読む価値のない入口を 3 種類外す。
+
+      - `String` と `Error`。ほとんどの型が満たす。
+      - 小文字で始まるメソッド。同じパッケージからしか呼べないので、ライブラリが呼ぶことはない。sum type を閉じる印のメソッド（`isChange()` など）がこれに当たる。
+      - 定数を返すだけのメソッド（`idle`）。開いても何もない。
+    fingerprint: 4c722d9cdb4a1f59
     lines:
       - offset: 9
         hash: a22e7db4
@@ -254,11 +264,14 @@ funcs:
       - offset: 22
         hash: b048c4cc
         text: 関数を別モジュールの関数型にしてから interface にする形。型変換は ChangeType 命令になるので funcOf が見通す
-      - offset: 31
-        hash: ab73fbb9
-        text: String と Error はほとんどの型が満たすので、入口にしない。入れると読む価値のある入口が埋もれる
+      - offset: 33
+        hash: 16f90409
+        text: String と Error はほとんどの型が満たすので、入口にしない。小文字のメソッドは同じパッケージからしか呼べないので、ライブラリが呼ぶことはない
         kind: note
-      - offset: 39
+      - offset: 40
+        hash: 25ea2b1d
+        text: 定数を返すだけのメソッドは、入口にしても読むものがない
+      - offset: 41
         hash: 945f384c
         text: 構造体に入れたもの（handed）を優先する。同じ関数が両方に当たっても、より具体的な理由を残す
   (*github.com/mpyw/pkgsight/internal/callgraph.builder).ownType:
@@ -1038,6 +1051,22 @@ funcs:
         hash: bf106def
         text: 名前付きの関数型への代入は型変換の命令になる。中身をたどらないと urfave/cli の Action が見つからない
         kind: important
+  github.com/mpyw/pkgsight/internal/callgraph.idle:
+    summary: 関数が定数を返すだけかを調べる
+    doc: idle は、fn が定数を返すだけか（nil を返すだけの Close など）を報告する。入口にしても何も見せない。
+    body: |-
+      `libraryEntries` が、interface 経由で呼ばれる入口から、中身のないメソッドを外すのに使う。
+
+      SSA で、ブロックが 1 つで、命令がすべて `Return`、返す値がすべて定数なら「何もしない」とみなす。引数をそのまま返す関数や、何かを計算する関数は対象外。
+    fingerprint: ee1242a0911a9799
+  github.com/mpyw/pkgsight/internal/callgraph.withLoopBodies:
+    summary: 関数と、その中の「関数を range で回すループ」の本体をまとめて返す
+    doc: withLoopBodies は、fn と、fn の中にある関数を回すループ（for m := range iface.Methods() など）の本体を返す。コンパイラはループの本体をそれぞれ合成関数にするので、自前の関数には数えられない。中のコードは fn のものなので、その呼び出しも fn のものにする。
+    body: |-
+      Go 1.23 からは、`func(yield func(T) bool)` の形の関数（イテレータ）を `for range` で回せる。コンパイラはループの本体を `yield` 関数に書き換えて、イテレータに渡す。SSA ではこの本体が `Synthetic` 印付きの無名関数になる。`isOwn` は合成関数を外すので、ここで拾わないと本体に書いた呼び出しが丸ごと見えなくなる。
+
+      ループの中のループは、本体の中の無名関数になるので、再帰でたどる。
+    fingerprint: 73c0d37a4608eea4
   github.com/mpyw/pkgsight/internal/freshness.New:
     summary: 注釈が対象とするコードの読み手を作る
     doc: New は、g と calls のコードを read を通して読む。read はルートからのスラッシュ区切りのパスを受け取る。

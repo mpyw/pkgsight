@@ -165,6 +165,9 @@ func TestEdges(t *testing.T) {
 		{"Promoted", []string{"interface (sink).Write own"}},
 		// So is the one for the method value.
 		{"Bound", []string{"static (sink).Write own"}},
+		// A call in the body of a loop over a function is the caller's,
+		// however deep the loops nest.
+		{"Loop", []string{"static Values std", "static inLoop own"}},
 		// A generic library function is named by its origin.
 		{"Sorted", []string{
 			"dynamic less own through slices.SortFunc",
@@ -285,12 +288,18 @@ func TestEntriesFromLibraries(t *testing.T) {
 		"handed onConn",
 		"handed serve",
 		// A method an interface of the standard library requires. String
-		// is left out, and so is direct, which the module calls.
+		// is left out, and so is direct, which the module calls. So are
+		// isChange, which no other package can call, and Close, which
+		// does nothing.
 		"interface (app).ServeHTTP",
+		"interface (echo).Echo",
+		"interface (echo).Shout",
 		"uncalled Bound",
 		"uncalled Generic",
 		"uncalled Guess",
+		"uncalled Loop",
 		"uncalled Promoted",
+		"uncalled Sealed",
 		"uncalled Server",
 		"uncalled Sorted",
 		"uncalled Twice",

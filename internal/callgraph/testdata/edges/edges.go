@@ -76,7 +76,11 @@ func direct(net.Conn, http.ConnState) {}
 // app is an http.Handler, and a fmt.Stringer.
 type app struct{}
 
-func (app) ServeHTTP(http.ResponseWriter, *http.Request) {}
+func (app) ServeHTTP(_ http.ResponseWriter, r *http.Request) {
+	if r == nil {
+		panic("no request")
+	}
+}
 
 func (app) String() string { return "app" }
 
@@ -97,3 +101,50 @@ func Server() *http.Server {
 // Direct is also stored in a field, but the module calls it, so it is no
 // entry.
 var Direct = &http.Server{ConnState: direct}
+
+// Change is closed: only this package can add a case, through the
+// unexported marker method.
+type Change interface{ isChange() }
+
+type Added struct{}
+
+func (Added) isChange() {}
+
+// quiet is an io.Closer whose Close only returns.
+type quiet struct{}
+
+func (quiet) Close() error { return nil }
+
+// Echoer is the module's own interface, with exported methods that do
+// something, however little.
+type Echoer interface {
+	Echo(s string) string
+	Shout(s string) string
+}
+
+type echo struct{}
+
+func (echo) Echo(s string) string { return s }
+
+func (echo) Shout(s string) string { return s + "!" }
+
+// Sealed puts values in interfaces whose methods are not worth reading: a
+// marker that closes a sum type, and a Close that does nothing.
+func Sealed() []any {
+	var c Change = Added{}
+	var cl io.Closer = quiet{}
+	var e Echoer = echo{}
+	return []any{c, cl, e}
+}
+
+// Loop calls inLoop from the body of a loop over a function, which the
+// compiler turns into a function of its own.
+func Loop() {
+	for x := range slices.Values([]int{1}) {
+		for range slices.Values([]int{x}) {
+			inLoop()
+		}
+	}
+}
+
+func inLoop() {}
