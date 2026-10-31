@@ -61,6 +61,17 @@ mise run build
 
 ## Usage
 
+| Command | |
+| --- | --- |
+| `pkgsight serve [packages]` | Open the module in the browser, and serve MCP for notes |
+| `pkgsight notes check [packages]` | List the notes whose code changed or is gone. Fails if there are any |
+| `pkgsight --version` | Print the version |
+| `pkgsight --help` | List the commands. `pkgsight <command> --help` lists a command's flags |
+
+Package patterns work as for the go command, and default to `./...`.
+
+### pkgsight serve
+
 In a Go module:
 
 ```bash
@@ -75,7 +86,7 @@ The browser opens on the package map. The call flow is ready a few seconds later
 | `--addr` | `localhost:7878` | Address to listen on |
 | `--open` | `true` | Open the browser |
 
-Arguments are package patterns, `./...` by default. The URL holds what is on screen, so you can share a view by its link.
+The URL holds what is on screen, so you can share a view by its link.
 
 ### Package map
 
@@ -90,6 +101,35 @@ Double-click a package to see the functions inside it and the calls between them
 Start from a `main` function in the sidebar, or search for any function. Click a function to open its calls, and use the badge on its right edge to close them again.
 
 Some calls cannot be seen. Calls made inside dependencies and calls through reflection are missing. An interface call on a value from a dependency is a guess, drawn dotted.
+
+### pkgsight notes check
+
+Lists the [notes](#notes) that no longer match the code:
+
+```console
+$ pkgsight notes check
+ja: orphan function example.com/sample/app.Gone
+ja: stale function example.com/sample/app.Run
+pkgsight: 2 notes do not match the code; ask an assistant to run the refresh_notes prompt
+```
+
+| Flag | Default | |
+| --- | --- | --- |
+| `--dir`, `-C` | `.` | Directory to run in |
+| `--lang` | All languages | Check only this language. Repeat it for more |
+
+| State | Meaning |
+| --- | --- |
+| `stale` | The code changed since the note was written |
+| `orphan` | The package or function is gone, or renamed |
+
+It always checks against the whole module. Package patterns only choose which notes to list.
+
+| Exit status | When |
+| --- | --- |
+| 0 | Every note matches the code |
+| 1 | Some note does not, or the module could not be loaded |
+| 2 | The command line is wrong |
 
 ## Notes
 
@@ -107,7 +147,7 @@ Then ask, for example: *"Explain the flow from main in Japanese."* The notes app
 /mcp__pkgsight__explain_module ja
 ```
 
-Notes are saved in `.pkgsight/notes/<lang>.json`, one file per language. Commit them, and everyone who runs pkgsight on the repository sees them.
+Notes are saved in `.pkgsight/notes/<lang>.yaml`, one file per language. Commit them, and everyone who runs pkgsight on the repository sees them.
 
 A note remembers the code it was written for. When that code changes, the note is marked as written for an older version. Ask Claude to bring the notes up to date:
 
@@ -115,11 +155,7 @@ A note remembers the code it was written for. When that code changes, the note i
 /mcp__pkgsight__refresh_notes ja
 ```
 
-To fail CI while any note is out of date:
-
-```bash
-pkgsight notes check
-```
+To fail CI while any note is out of date, run [`pkgsight notes check`](#pkgsight-notes-check).
 
 ## Contributing
 
