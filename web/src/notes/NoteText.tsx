@@ -7,6 +7,12 @@ export function NoteBlock({ note, lang }: { note?: Note; lang: string }) {
   if (!note?.summary && !note?.body) return null;
   return (
     <div className="note-block" lang={lang}>
+      {note.stale && (
+        <p className="stale-warning" lang="en">
+          Written for an older version of this code. Ask an assistant to refresh
+          it.
+        </p>
+      )}
       {note.summary && (
         <p className="summary">
           <Inline text={note.summary} />

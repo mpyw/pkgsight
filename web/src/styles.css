@@ -1663,3 +1663,60 @@ body.resizing {
 .source .vnote .md pre {
   white-space: pre;
 }
+
+/* Packages left out of the call graph */
+
+.skipped pre {
+  margin: 6px 0 0;
+  padding: 6px 8px;
+  overflow-x: auto;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--danger) 8%, var(--surface-2));
+  color: var(--danger);
+  font: 11.5px/1.5 var(--mono);
+  white-space: pre-wrap;
+}
+
+.status.skipped summary {
+  color: var(--danger);
+  cursor: pointer;
+}
+
+.status.skipped ul {
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.status.skipped li {
+  display: flex;
+  flex-direction: column;
+  padding: 3px 0;
+}
+
+.status.skipped .note {
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Notes written for older code */
+
+.summary.stale {
+  opacity: 0.6;
+}
+
+.summary.stale::before {
+  content: "⚠ ";
+  color: var(--alert-warning);
+}
+
+.stale-warning {
+  margin: 0 0 8px;
+  color: var(--alert-warning);
+  font-size: 12px;
+  font-weight: 600;
+}

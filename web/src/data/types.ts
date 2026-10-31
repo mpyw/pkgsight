@@ -69,6 +69,13 @@ export interface CallStatus {
   state: "pending" | "ready" | "error";
   error?: string;
   tookMs?: number;
+  // Packages left out of the call graph because they do not type-check.
+  skipped?: Skipped[];
+}
+
+export interface Skipped {
+  path: string;
+  error: string;
 }
 
 // Notes that an assistant wrote over MCP, in one language.
@@ -79,6 +86,9 @@ export interface Note {
   doc?: string;
   // A longer explanation for the side panel.
   body?: string;
+  // The code changed since the note was written. Unset while the call
+  // graph is building.
+  stale?: boolean;
 }
 
 // A note shown above a line of a function, without a line number of its own.

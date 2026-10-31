@@ -16,6 +16,8 @@ import type { Emphasis } from "../map/nodes";
 import type { Flow } from "../map/RouteEdge";
 import type { Forest } from "../map/tree";
 import { Inline } from "../notes/NoteText";
+import { SkippedNote } from "../map/PackagePanel";
+import { summaryProps } from "../notes/stale";
 import { useNotesBook } from "../notes/useNotes";
 import { buildInside, type Inside } from "./graph";
 import { insideEdgeTypes, type InsideEdgeType } from "./InsideEdge";
@@ -141,6 +143,7 @@ function InsideCanvas({
             emphasis,
             home: path,
             summary: notes?.funcs[n.id]?.summary,
+            stale: notes?.funcs[n.id]?.stale,
             lang: notes?.lang,
           },
           draggable: false,
@@ -205,6 +208,7 @@ function InsideCanvas({
   }, [selected, linked, fitView]);
 
   const pkg = forest.packages.get(path);
+  const skipped = status?.skipped?.find((s) => s.path === path);
   const pkgNote = notes?.packages[path];
   const sel = funcs?.find((f) => f.id === selected);
   const fnCount = g?.nodes.filter((n) => n.kind === "func").length ?? 0;
@@ -225,7 +229,10 @@ function InsideCanvas({
         <span className="crumb">
           <code>{path}</code>
           {pkgNote?.summary ? (
-            <span className="summary" lang={notes?.lang}>
+            <span
+              lang={notes?.lang}
+              {...summaryProps(pkgNote.summary, pkgNote.stale)}
+            >
               <Inline text={pkgNote.summary} />
             </span>
           ) : (
@@ -264,6 +271,10 @@ function InsideCanvas({
             {status?.state === "ready"
               ? "Laying out…"
               : "Building the call graph…"}
+          </div>
+        ) : skipped ? (
+          <div className="empty">
+            <SkippedNote skipped={skipped} />
           </div>
         ) : fnCount === 0 ? (
           <div className="empty">This package declares no functions.</div>

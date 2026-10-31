@@ -1,5 +1,6 @@
 import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
 import type { CSSProperties } from "react";
+import { summaryProps } from "../notes/stale";
 import { useNotesBook } from "../notes/useNotes";
 import type { VNode } from "./tree";
 
@@ -34,7 +35,8 @@ function Ports() {
 
 export function PackageNode({ data: { v, emphasis } }: NodeProps<MapNode>) {
   const notes = useNotesBook();
-  const summary = v.pkg && notes?.packages[v.pkg.path]?.summary;
+  const note = v.pkg && notes?.packages[v.pkg.path];
+  const summary = note?.summary;
   return (
     <div
       className={`node package kind-${v.kind} ${emphasis}${v.self ? " self" : ""}${summary ? " noted" : ""}`}
@@ -44,7 +46,7 @@ export function PackageNode({ data: { v, emphasis } }: NodeProps<MapNode>) {
       <div className="label">
         <span className="name">{v.label}</span>
         {summary && (
-          <span className="summary" lang={notes?.lang} title={summary}>
+          <span lang={notes?.lang} {...summaryProps(summary, note?.stale)}>
             {summary}
           </span>
         )}

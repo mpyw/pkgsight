@@ -78,3 +78,52 @@ describe("receiver", () => {
     expect(receiver("Run$1")).toBeUndefined();
   });
 });
+
+describe("buildInside merging", () => {
+  const [p, q, q1, r, ext] = [
+    fn("app", "P"),
+    fn("app", "Q"),
+    fn("app", "Q$1"),
+    fn("app", "R"),
+    fn("db", "Get"),
+  ];
+  const merged: FuncDetail[] = [
+    {
+      ...q,
+      calls: [
+        { ...call(r, "defer"), dispatch: "interface", maybe: true },
+        call(ext),
+        { ...call(ext, "go"), lines: [9] },
+      ],
+      callers: [p, fn("cmd", "main"), fn("cmd", "init")],
+    },
+    {
+      ...q1,
+      calls: [{ ...call(r, "go"), maybe: true }, call(r)],
+      callers: [q],
+    },
+    { ...r, calls: [], callers: [q] },
+    { ...p, calls: [call(q)], callers: [] },
+  ];
+
+  it("keeps the strongest mode, and a guess only when every call is one", () => {
+    const g = buildInside("app", merged, { closures: false });
+    const e = g.edges.find((x) => x.id === "app.Q->app.R")!;
+    expect(e).toMatchObject({
+      mode: "go",
+      dispatch: "interface",
+      maybe: false,
+      count: 3,
+    });
+    expect(g.nodes.find((n) => n.id === "app.Q")!.folded).toBe(1);
+  });
+
+  it("counts functions, not call sites, across packages", () => {
+    const g = buildInside("app", merged, { closures: false });
+    expect(g.edges.find((x) => x.id === "app.Q->out:db")).toMatchObject({
+      count: 1,
+      mode: "go",
+    });
+    expect(g.edges.find((x) => x.id === "in:cmd->app.Q")!.count).toBe(2);
+  });
+});

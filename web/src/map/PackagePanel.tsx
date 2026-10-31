@@ -1,8 +1,10 @@
 import { Panel } from "../components/Panel";
 import { useEffect, useState } from "react";
 import type { DataSource } from "../data/source";
-import type { FuncDetail, Package } from "../data/types";
+import { useCallStatus } from "../data/useCallStatus";
+import type { FuncDetail, Package, Skipped } from "../data/types";
 import { DocBlock, NoteBlock } from "../notes/NoteText";
+import { summaryProps } from "../notes/stale";
 import { useNotesBook } from "../notes/useNotes";
 import type { Forest } from "./tree";
 
@@ -108,10 +110,14 @@ function Funcs({
   path: string;
   onOpenFunc: (id: string) => void;
 }) {
+  const status = useCallStatus(source);
+  const ready = status?.state === "ready";
   const [funcs, setFuncs] = useState<FuncDetail[]>();
+  // Ask only once the call graph is built: before that the server has no
+  // functions to give, and an empty list would stick.
   useEffect(() => {
+    if (!ready) return;
     let live = true;
-    // The call graph may still be building; the list then stays empty.
     source.packageFuncs(path).then(
       (f) => live && setFuncs(f),
       () => live && setFuncs([]),
@@ -119,7 +125,8 @@ function Funcs({
     return () => {
       live = false;
     };
-  }, [source, path]);
+  }, [source, path, ready]);
+  const skipped = status?.skipped?.find((s) => s.path === path);
 
   const notes = useNotesBook();
   const named = (funcs ?? []).filter((f) => !f.name.includes("$"));
@@ -128,6 +135,10 @@ function Funcs({
       <h3>
         Functions <span className="n">{funcs ? named.length : "…"}</span>
       </h3>
+      {skipped && <SkippedNote skipped={skipped} />}
+      {status?.state === "error" && (
+        <p className="hint">The call graph failed: {status.error}</p>
+      )}
       <ul className="links">
         {named.map((f) => (
           <li key={f.id}>
@@ -142,7 +153,13 @@ function Funcs({
                 {f.calls.filter((c) => c.to.kind === "own").length} calls
               </span>
               {notes?.funcs[f.id]?.summary && (
-                <span className="summary" lang={notes.lang}>
+                <span
+                  lang={notes.lang}
+                  {...summaryProps(
+                    notes.funcs[f.id].summary ?? "",
+                    notes.funcs[f.id].stale,
+                  )}
+                >
                   {notes.funcs[f.id].summary}
                 </span>
               )}
@@ -193,5 +210,17 @@ function Links(props: {
         ))}
       </ul>
     </section>
+  );
+}
+
+// SkippedNote says why a package that does not type-check has no functions.
+export function SkippedNote({ skipped }: { skipped: Skipped }) {
+  return (
+    <div className="skipped">
+      <p className="hint">
+        Left out of the call graph: this package does not type-check.
+      </p>
+      <pre>{skipped.error}</pre>
+    </div>
   );
 }

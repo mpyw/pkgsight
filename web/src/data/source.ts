@@ -56,6 +56,8 @@ export class HttpDataSource implements DataSource {
       p = this.fetch(`/api/source?${new URLSearchParams({ file })}`).then((r) =>
         r.text(),
       );
+      // Keep a failure out of the cache, so the next look tries again.
+      p.catch(() => this.sources.delete(file));
       this.sources.set(file, p);
     }
     return p;

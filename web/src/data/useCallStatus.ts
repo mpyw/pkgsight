@@ -9,12 +9,18 @@ export function useCallStatus(source: DataSource): CallStatus | undefined {
   useEffect(() => {
     let live = true;
     let timer: ReturnType<typeof setTimeout>;
+    // A failed request is asked again, or the status would stay unknown.
     const poll = () =>
-      source.callStatus().then((s) => {
-        if (!live) return;
-        setStatus(s);
-        if (s.state === "pending") timer = setTimeout(poll, 500);
-      });
+      source.callStatus().then(
+        (s) => {
+          if (!live) return;
+          setStatus(s);
+          if (s.state === "pending") timer = setTimeout(poll, 500);
+        },
+        () => {
+          if (live) timer = setTimeout(poll, 500);
+        },
+      );
     void poll();
     return () => {
       live = false;

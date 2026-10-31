@@ -1,6 +1,7 @@
 import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
 import type { CSSProperties } from "react";
 import type { Emphasis } from "../map/nodes";
+import { summaryProps } from "../notes/stale";
 import { hue } from "../tone";
 import type { INode } from "./graph";
 
@@ -10,6 +11,8 @@ export type InsideNode = Node<{
   // The package the view is inside, for tone and short names.
   home: string;
   summary?: string;
+  // The note was written for older code.
+  stale?: boolean;
   lang?: string;
 }>;
 
@@ -33,7 +36,7 @@ function Ports() {
 }
 
 export function FuncBox({
-  data: { n, emphasis, home, summary, lang },
+  data: { n, emphasis, home, summary, stale, lang },
 }: NodeProps<InsideNode>) {
   const exported = /^\p{Lu}/u.test(n.label);
   return (
@@ -56,7 +59,7 @@ export function FuncBox({
         )}
       </div>
       {summary && (
-        <div className="summary" lang={lang} title={summary}>
+        <div lang={lang} {...summaryProps(summary, stale)}>
           {summary}
         </div>
       )}

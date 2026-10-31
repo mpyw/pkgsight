@@ -51,11 +51,16 @@ export function useNotes(source: DataSource): NotesState {
     // Line notes are placed once the call graph is ready, so load again then.
     let timer: ReturnType<typeof setTimeout>;
     const poll = () =>
-      source.callStatus().then((s) => {
-        if (!live) return;
-        if (s.state === "pending") timer = setTimeout(poll, 1000);
-        else void load();
-      });
+      source.callStatus().then(
+        (s) => {
+          if (!live) return;
+          if (s.state === "pending") timer = setTimeout(poll, 1000);
+          else void load();
+        },
+        () => {
+          if (live) timer = setTimeout(poll, 1000);
+        },
+      );
     void poll();
 
     return () => {

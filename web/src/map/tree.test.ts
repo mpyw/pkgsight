@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { Graph, Package } from "../data/types";
-import { ancestors, buildForest, initialExpanded, view } from "./tree";
+import {
+  allDirectories,
+  ancestors,
+  buildForest,
+  initialExpanded,
+  view,
+} from "./tree";
 
 const pkg = (
   path: string,
@@ -98,5 +104,52 @@ describe("ancestors", () => {
       "g:ex.com/m/internal",
       "r:ex.com/m",
     ]);
+  });
+});
+
+describe("allDirectories", () => {
+  it("lists every directory of the shown kinds", () => {
+    const f = buildForest(graph);
+    expect([...allDirectories(f, new Set(["own"]))].sort()).toEqual([
+      "g:ex.com/m/internal",
+      "g:ex.com/m/internal/a",
+      "r:ex.com/m",
+    ]);
+    expect([...allDirectories(f, new Set(["std"]))]).toEqual(["r:std"]);
+  });
+});
+
+describe("buildForest roots", () => {
+  it("orders the module first, then the standard library, then dependencies", () => {
+    const f = buildForest({
+      ...graph,
+      packages: [
+        pkg("z.org/dep/x", [], "ext"),
+        ...graph.packages,
+        pkg("net/http", ["fmt"], "std"),
+      ].map((p) => (p.kind === "ext" ? { ...p, module: "z.org/dep" } : p)),
+    });
+    expect(f.roots.map((r) => r.label)).toEqual([
+      "ex.com/m",
+      "std",
+      "z.org/dep",
+    ]);
+    const std = f.roots[1];
+    expect(std.children.map((c) => c.label)).toEqual(["fmt", "net/http"]);
+  });
+
+  it("gives each child of a grouping directory its own hue", () => {
+    const f = buildForest(graph);
+    const internal = f.holder.get("ex.com/m/internal/b")!.parent!;
+    const [a, b] = internal.children;
+    expect(a.tone).not.toBe(b.tone);
+  });
+});
+
+describe("ancestors of a package with subdirectories", () => {
+  it("opens the package's own directory too", () => {
+    const f = buildForest(graph);
+    expect(ancestors(f, "ex.com/m")).toEqual(["r:ex.com/m"]);
+    expect(ancestors(f, "nope")).toEqual([]);
   });
 });

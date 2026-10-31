@@ -47,6 +47,9 @@ function Flow({ source, root, onRoot, onShowPackage }: Props) {
     new Map(),
   );
   const inflight = useRef(new Set<string>());
+  // Functions whose details failed to load, with why. They are not asked
+  // for again until the reader says so.
+  const [failed, setFailed] = useState<ReadonlyMap<string, string>>(new Map());
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(
     new Set(root ? [root] : []),
   );
@@ -60,9 +63,13 @@ function Flow({ source, root, onRoot, onShowPackage }: Props) {
       for (const id of ids) {
         if (inflight.current.has(id)) continue;
         inflight.current.add(id);
-        void source
-          .func(id)
-          .then((d) => setDetails((prev) => new Map(prev).set(id, d)));
+        source.func(id).then(
+          (d) => setDetails((prev) => new Map(prev).set(id, d)),
+          (e: unknown) => {
+            inflight.current.delete(id);
+            setFailed((prev) => new Map(prev).set(id, String(e)));
+          },
+        );
       }
     },
     [source],
@@ -110,8 +117,8 @@ function Flow({ source, root, onRoot, onShowPackage }: Props) {
       .filter((p) => p.node.fn.kind === "own" && !details.has(p.node.fn.id))
       .map((p) => p.node.fn.id);
     if (!details.has(root)) missing.push(root);
-    ensure(missing);
-  }, [status, root, placed, details, ensure]);
+    ensure(missing.filter((id) => !failed.has(id)));
+  }, [status, root, placed, details, failed, ensure]);
 
   const byKey = useMemo(
     () => new Map(placed.map((p) => [p.node.key, p])),
@@ -134,6 +141,7 @@ function Flow({ source, root, onRoot, onShowPackage }: Props) {
         data: {
           n: p.node,
           summary: notes?.funcs[p.node.fn.id]?.summary,
+          stale: notes?.funcs[p.node.fn.id]?.stale,
           lang: notes?.lang,
           selected: p.node.key === selected,
           onPath: onPath.has(p.node.key),
@@ -238,6 +246,15 @@ function Flow({ source, root, onRoot, onShowPackage }: Props) {
           Pick a place to start on the left: a main function, or search for any
           function.
         </div>
+      ) : failed.has(root) && !rootDetail ? (
+        <div className="empty">
+          <p>
+            Could not load <code>{root}</code>: {failed.get(root)}
+          </p>
+          <button className="chip" onClick={() => setFailed(new Map())}>
+            Try again
+          </button>
+        </div>
       ) : (
         <div className="canvas">
           <ReactFlow
@@ -292,14 +309,19 @@ function Sidebar({
   const notes = useNotesBook();
 
   useEffect(() => {
-    if (status?.state === "ready") void source.entries().then(setEntries);
+    if (status?.state === "ready")
+      source.entries().then(setEntries, () => setEntries([]));
   }, [source, status]);
 
   useEffect(() => {
     if (status?.state !== "ready" || query.trim() === "") return;
     let live = true;
     const t = setTimeout(
-      () => void source.search(query.trim()).then((h) => live && setHits(h)),
+      () =>
+        source.search(query.trim()).then(
+          (h) => live && setHits(h),
+          () => live && setHits([]),
+        ),
       120,
     );
     return () => {
@@ -320,7 +342,10 @@ function Sidebar({
           {f.name}
         </span>
         {notes?.funcs[f.id]?.summary ? (
-          <span className="note summary" lang={notes.lang}>
+          <span
+            className={`note summary${notes.funcs[f.id].stale ? " stale" : ""}`}
+            lang={notes.lang}
+          >
             {notes.funcs[f.id].summary}
           </span>
         ) : (
@@ -354,6 +379,23 @@ function Sidebar({
         <p className="status">
           Call graph built in {((status.tookMs ?? 0) / 1000).toFixed(1)}s
         </p>
+      )}
+      {status?.skipped && status.skipped.length > 0 && (
+        <details className="status skipped">
+          <summary>
+            {status.skipped.length === 1
+              ? "1 package left out: it does not type-check"
+              : `${status.skipped.length} packages left out: they do not type-check`}
+          </summary>
+          <ul>
+            {status.skipped.map((s) => (
+              <li key={s.path} title={s.error}>
+                <code>{s.path}</code>
+                <span className="note">{s.error}</span>
+              </li>
+            ))}
+          </ul>
+        </details>
       )}
       {hits ? (
         <section>

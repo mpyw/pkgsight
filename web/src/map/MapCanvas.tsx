@@ -131,6 +131,9 @@ export function MapCanvas({
             onInside(v.pkg.path);
         }}
         onPaneClick={() => onSelect(undefined)}
+        // A double click goes inside a package. React Flow's own double-click
+        // zoom would catch it first, on the pane, and stop it there.
+        zoomOnDoubleClick={false}
         nodesConnectable={false}
         elementsSelectable={false}
         minZoom={0.05}

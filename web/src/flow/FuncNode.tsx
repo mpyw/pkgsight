@@ -1,5 +1,6 @@
 import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
 import type { CSSProperties } from "react";
+import { summaryProps } from "../notes/stale";
 import { hue } from "../tone";
 import type { FlowNode } from "./tree";
 
@@ -10,11 +11,13 @@ export type FuncNodeType = Node<{
   onToggle: (n: FlowNode) => void;
   // The note's summary, in the language lang.
   summary?: string;
+  // The note was written for older code.
+  stale?: boolean;
   lang?: string;
 }>;
 
 export function FuncNode({
-  data: { n, selected, onPath, onToggle, summary, lang },
+  data: { n, selected, onPath, onToggle, summary, stale, lang },
 }: NodeProps<FuncNodeType>) {
   const { fn, via } = n;
   const style = { "--tone": hue(fn.pkg) } as CSSProperties;
@@ -67,7 +70,7 @@ export function FuncNode({
         {n.recursive && <span className="tag">↺ recursive</span>}
       </div>
       {summary && (
-        <div className="summary" lang={lang} title={summary}>
+        <div lang={lang} {...summaryProps(summary, stale)}>
           {summary}
         </div>
       )}
