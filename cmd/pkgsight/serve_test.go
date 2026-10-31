@@ -62,7 +62,7 @@ func TestServeFailures(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(badNotes, ".pkgsight", "notes"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(badNotes, ".pkgsight", "notes", "ja.json"), []byte("{"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(badNotes, ".pkgsight", "notes", "ja.yaml"), []byte("{"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -72,7 +72,7 @@ func TestServeFailures(t *testing.T) {
 		want string
 	}{
 		{"no such directory", []string{"-C", filepath.Join(t.TempDir(), "missing")}, "missing: no such file or directory"},
-		{"bad notes file", []string{"-C", badNotes}, "ja.json"},
+		{"bad notes file", []string{"-C", badNotes}, "ja.yaml"},
 		{"bad address", []string{"--addr", "256.0.0.1:0", "-C", sample}, "listen"},
 	}
 	for _, tt := range tests {

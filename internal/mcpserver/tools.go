@@ -57,6 +57,10 @@ Kinds of notes:
 How to work:
 - Write every note in the language the user asks for, given as a BCP 47 tag
   such as "ja". Keep identifiers and code as they are.
+- Write for someone new to the code, who may not know program analysis or
+  compilers. Prefer plain words to jargon such as SSA, VTA or CHA. When a
+  term is needed, say what it means in plain words where it first appears,
+  or in the package note.
 - Read the callees before you summarize a caller.
 - A note keeps a fingerprint of its code. When the code changes, the note
   turns stale. The stale_notes tool lists those, and the notes whose code

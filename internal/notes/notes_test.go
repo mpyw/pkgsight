@@ -52,7 +52,7 @@ func TestStore(t *testing.T) {
 	if got := <-ch; got != "ja" {
 		t.Errorf("event = %q", got)
 	}
-	file := filepath.Join(root, ".pkgsight", "notes", "ja.json")
+	file := filepath.Join(root, ".pkgsight", "notes", "ja.yaml")
 	if _, err := os.Stat(file); err != nil {
 		t.Fatal(err)
 	}
@@ -79,15 +79,16 @@ func TestStore(t *testing.T) {
 func TestOpenSkipsWhatIsNotABook(t *testing.T) {
 	root := t.TempDir()
 	dir := filepath.Join(root, ".pkgsight", "notes")
-	if err := os.MkdirAll(filepath.Join(dir, "sub.json"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(dir, "sub.yaml"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	for name, body := range map[string]string{
 		"README.md":   "not a book",
-		"../x.json":   "{}",
-		"en.json":     `{"packages": {"p": {"summary": "kept"}}}`,
-		"not_a.json":  "{",
+		"../x.yaml":   "{}",
+		"en.yaml":     "packages:\n  p:\n    summary: kept\n",
+		"not_a.yaml":  "{",
 		"Japanese.tx": "{",
+		"ja.json":     "{",
 	} {
 		if err := os.WriteFile(filepath.Join(dir, filepath.Base(name)), []byte(body), 0o644); err != nil {
 			t.Fatal(err)
@@ -103,16 +104,16 @@ func TestOpenSkipsWhatIsNotABook(t *testing.T) {
 }
 
 func TestOpenFailures(t *testing.T) {
-	t.Run("bad JSON", func(t *testing.T) {
+	t.Run("bad YAML", func(t *testing.T) {
 		root := t.TempDir()
 		dir := filepath.Join(root, ".pkgsight", "notes")
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(filepath.Join(dir, "ja.json"), []byte("{"), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(dir, "ja.yaml"), []byte("{"), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := notes.Open(root); err == nil || !strings.Contains(err.Error(), "ja.json") {
+		if _, err := notes.Open(root); err == nil || !strings.Contains(err.Error(), "ja.yaml") {
 			t.Errorf("err = %v, want one naming the file", err)
 		}
 	})
@@ -135,7 +136,7 @@ func TestOpenFailures(t *testing.T) {
 			t.Fatal(err)
 		}
 		// A dangling link reads as an error, whoever runs the test.
-		if err := os.Symlink(filepath.Join(root, "gone"), filepath.Join(dir, "ja.json")); err != nil {
+		if err := os.Symlink(filepath.Join(root, "gone"), filepath.Join(dir, "ja.yaml")); err != nil {
 			t.Fatal(err)
 		}
 		if _, err := notes.Open(root); err == nil {
@@ -276,7 +277,7 @@ func TestFailedRenameLeavesNoTemporaryFile(t *testing.T) {
 	root := t.TempDir()
 	dir := filepath.Join(root, ".pkgsight", "notes")
 	// The book's name is taken by a directory, so the rename fails.
-	if err := os.MkdirAll(filepath.Join(dir, "ja.json", "x"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(dir, "ja.yaml", "x"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	s, err := notes.Open(root)
@@ -292,5 +293,71 @@ func TestFailedRenameLeavesNoTemporaryFile(t *testing.T) {
 	}
 	if len(entries) != 1 {
 		t.Errorf("left in the notes directory: %v", entries)
+	}
+}
+
+func TestBookFileIsReadableYAML(t *testing.T) {
+	root := t.TempDir()
+	s, err := notes.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = s.Update("ja", func(b *notes.Book) {
+		b.Packages["p"] = notes.Note{Summary: "no", Body: "一行目\n\n> [!NOTE]\n> 二行目"}
+		b.Funcs["f"] = notes.FuncNote{Lines: []notes.LineNote{{Offset: -1, Hash: "12345678", Text: "t", Kind: notes.KindTip}}}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(root, ".pkgsight", "notes", "ja.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(data)
+	// A multi-line body stays a block, and strings that look like other
+	// types are quoted, so they read back as strings.
+	for _, want := range []string{"body: |-\n      一行目\n\n      > [!NOTE]", `summary: "no"`, `hash: "12345678"`} {
+		if !strings.Contains(text, want) {
+			t.Errorf("the file has no %q:\n%s", want, text)
+		}
+	}
+	again, err := notes.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := again.Book("ja"); got.Packages["p"].Summary != "no" || got.Funcs["f"].Lines[0].Hash != "12345678" {
+		t.Errorf("read back %+v", got)
+	}
+}
+
+func TestUnknownKeysAreRejected(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, ".pkgsight", "notes")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "ja.yaml"), []byte("packages:\n  p:\n    colour: blue\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := notes.Open(root); err == nil || !strings.Contains(err.Error(), "colour") {
+		t.Errorf("err = %v, want one naming the unknown key", err)
+	}
+}
+
+func TestEmptyBookFile(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, ".pkgsight", "notes")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "ja.yaml"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s, err := notes.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b := s.Book("ja"); len(b.Packages)+len(b.Funcs) != 0 {
+		t.Errorf("an empty file read as %+v", b)
 	}
 }

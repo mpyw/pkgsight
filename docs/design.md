@@ -45,7 +45,7 @@ The URL fragment holds the view: `#view=flow&fn=<id>`, `#view=inside&pkg=<path>`
 
 ## Notes
 
-Notes live in `.pkgsight/notes/<lang>.json` under the directory pkgsight runs in, one file per BCP 47 language tag. The UI shows one language at a time, chosen in the toolbar. It starts with the browser's language when there are notes in it.
+Notes live in `.pkgsight/notes/<lang>.yaml` under the directory pkgsight runs in, one file per BCP 47 language tag. The files are YAML, so a multi-line body reads well in a diff. Unknown keys are rejected, so a typo in a hand-edited file is not lost. The UI shows one language at a time, chosen in the toolbar. It starts with the browser's language when there are notes in it.
 
 | Part | Of | Shown |
 | --- | --- | --- |

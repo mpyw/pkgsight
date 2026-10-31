@@ -2,17 +2,17 @@
 // codebase: a summary and a body for packages and functions, and notes that
 // sit between the lines of a function without taking a line number.
 //
-// Each language has its own file, .pkgsight/notes/<lang>.json under the
+// Each language has its own file, .pkgsight/notes/<lang>.yaml under the
 // analyzed directory, so a team can commit the notes for every reader.
 package notes
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json/jsontext"
-	"encoding/json/v2"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -21,31 +21,33 @@ import (
 	"sort"
 	"strings"
 	"sync"
+
+	"go.yaml.in/yaml/v3"
 )
 
 // Book holds the notes of one language.
 type Book struct {
-	Packages map[string]Note     `json:"packages,omitempty"`
-	Funcs    map[string]FuncNote `json:"funcs,omitempty"`
+	Packages map[string]Note     `json:"packages,omitempty" yaml:"packages,omitempty"`
+	Funcs    map[string]FuncNote `json:"funcs,omitempty" yaml:"funcs,omitempty"`
 }
 
 // Note explains a package or a function.
 type Note struct {
 	// Summary is one sentence for the map and the call flow.
-	Summary string `json:"summary,omitempty"`
+	Summary string `json:"summary,omitempty" yaml:"summary,omitempty"`
 	// Doc is the doc comment in the language of the book.
-	Doc string `json:"doc,omitempty"`
+	Doc string `json:"doc,omitempty" yaml:"doc,omitempty"`
 	// Body is a longer explanation for the side panel.
-	Body string `json:"body,omitempty"`
+	Body string `json:"body,omitempty" yaml:"body,omitempty"`
 	// Fingerprint is the code the note was written for, as the freshness
 	// package hashes it.
-	Fingerprint string `json:"fingerprint,omitempty"`
+	Fingerprint string `json:"fingerprint,omitempty" yaml:"fingerprint,omitempty"`
 }
 
 // FuncNote explains a function, and some of its lines.
 type FuncNote struct {
-	Note
-	Lines []LineNote `json:"lines,omitempty"`
+	Note  `yaml:",inline"`
+	Lines []LineNote `json:"lines,omitempty" yaml:"lines,omitempty"`
 }
 
 // LineNote sits above one line of a function or of its doc comment. It
@@ -53,10 +55,10 @@ type FuncNote struct {
 // comment, and by a hash of its text, so it can follow the line when the
 // code above the function changes.
 type LineNote struct {
-	Offset int    `json:"offset"`
-	Hash   string `json:"hash"`
-	Text   string `json:"text"`
-	Kind   Kind   `json:"kind,omitempty"`
+	Offset int    `json:"offset" yaml:"offset"`
+	Hash   string `json:"hash" yaml:"hash"`
+	Text   string `json:"text" yaml:"text"`
+	Kind   Kind   `json:"kind,omitempty" yaml:"kind,omitempty"`
 }
 
 // Kind marks a line note as one of the alerts GitHub draws in Markdown. A
@@ -160,7 +162,7 @@ func Open(root string) (*Store, error) {
 		return nil, err
 	}
 	for _, e := range entries {
-		lang, ok := strings.CutSuffix(e.Name(), ".json")
+		lang, ok := strings.CutSuffix(e.Name(), ".yaml")
 		if !ok || !validLang(lang) || e.IsDir() {
 			continue
 		}
@@ -169,7 +171,7 @@ func Open(root string) (*Store, error) {
 			return nil, err
 		}
 		var book Book
-		if err := json.Unmarshal(b, &book); err != nil {
+		if err := decodeBook(b, &book); err != nil {
 			return nil, fmt.Errorf("%s: %w", e.Name(), err)
 		}
 		s.books[lang] = &book
@@ -242,14 +244,14 @@ func (s *Store) Update(lang string, edit func(*Book)) error {
 }
 
 func (s *Store) write(lang string, b *Book) error {
-	path := filepath.Join(s.dir, lang+".json")
+	path := filepath.Join(s.dir, lang+".yaml")
 	if len(b.Packages) == 0 && len(b.Funcs) == 0 {
 		if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return err
 		}
 		return nil
 	}
-	data, err := json.Marshal(b, jsontext.WithIndent("  "))
+	data, err := encodeBook(b)
 	if err != nil {
 		return err
 	}
@@ -268,7 +270,7 @@ func (s *Store) write(lang string, b *Book) error {
 		_ = tmp.Close()
 		return err
 	}
-	if _, err := tmp.Write(append(data, '\n')); err != nil {
+	if _, err := tmp.Write(data); err != nil {
 		_ = tmp.Close()
 		return err
 	}
@@ -290,4 +292,30 @@ func (s *Store) Subscribe() (<-chan string, func()) {
 		delete(s.subs, ch)
 		s.mu.Unlock()
 	}
+}
+
+// encodeBook writes b as YAML, which keeps a multi-line body readable in a
+// diff. The encoder quotes any string that would read back as another type.
+func encodeBook(b *Book) ([]byte, error) {
+	var buf bytes.Buffer
+	enc := yaml.NewEncoder(&buf)
+	enc.SetIndent(2)
+	if err := enc.Encode(b); err != nil {
+		return nil, err
+	}
+	if err := enc.Close(); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+// decodeBook reads a book, and rejects keys it does not know, so a typo in
+// a hand-edited file is not dropped without a word.
+func decodeBook(data []byte, b *Book) error {
+	dec := yaml.NewDecoder(bytes.NewReader(data))
+	dec.KnownFields(true)
+	if err := dec.Decode(b); err != nil && !errors.Is(err, io.EOF) {
+		return err
+	}
+	return nil
 }
