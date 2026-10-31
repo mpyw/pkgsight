@@ -22,7 +22,7 @@ pkgsight draws a Go module as a map of its packages, and follows the calls from 
 ## Install
 
 ```bash
-mise use "github:mpyw/pkgsight@0.2.0"
+mise use "github:mpyw/pkgsight@0.2.1"
 ```
 
 <details>
@@ -32,13 +32,13 @@ Pin it in a project's `mise.toml`:
 
 ```toml
 [tools]
-"github:mpyw/pkgsight" = "0.2.0"
+"github:mpyw/pkgsight" = "0.2.1"
 ```
 
 From a release archive:
 
 ```bash
-VERSION=0.2.0
+VERSION=0.2.1
 curl -LO "https://github.com/mpyw/pkgsight/releases/download/v${VERSION}/pkgsight_${VERSION}_darwin_arm64.tar.gz"
 curl -LO "https://github.com/mpyw/pkgsight/releases/download/v${VERSION}/checksums.txt"
 shasum -a 256 -c checksums.txt --ignore-missing
