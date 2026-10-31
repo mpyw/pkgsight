@@ -1,0 +1,33 @@
+[tools]
+"github:mpyw/declscope" = "0.24.1"
+go = "1.27.3"
+golangci-lint = "2.15.0"
+node = "26.12.1"
+pnpm = "10.28.1"
+
+[tasks.declscope]
+description = "File-level scope check (github.com/mpyw/declscope)"
+# shrink first: a name it unexports must then carry its file's namespace.
+run = ['declscope shrink ./...', 'declscope ./...']
+
+[tasks.web-build]
+description = "Build the frontend into web/dist for go:embed"
+dir = "web"
+run = ['pnpm install --frozen-lockfile', 'pnpm build']
+
+[tasks.build]
+description = "Build the pkgsight binary with the frontend embedded"
+depends = ['web-build']
+run = 'go build -o pkgsight ./cmd/pkgsight'
+
+[tasks.check]
+description = "Run every test and lint"
+depends = ['web-build']
+run = [
+  'golangci-lint run',
+  'go test ./...',
+  'declscope shrink ./...',
+  'declscope ./...',
+  'pnpm --dir web lint',
+  'pnpm --dir web test',
+]

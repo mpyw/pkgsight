@@ -1,0 +1,124 @@
+name: CI
+
+on:
+  push: {}
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+
+    # id-token: write lets the Codecov upload authenticate as this workflow
+    # run instead of with a stored token. A job's permissions replace the
+    # default rather than add to it, so contents: read is restated.
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      # Every tool is pinned in mise.toml, so CI and a contributor's machine
+      # run the same binaries.
+      - uses: jdx/mise-action@v4
+        with:
+          cache: true
+
+      # The Go tests do not need the built web UI: web/dist holds a .gitkeep,
+      # which is enough for go:embed.
+      - name: Run Go tests with coverage
+        run: go test -race -coverpkg=./... -coverprofile=coverage.txt ./...
+
+      - name: Run web tests
+        run: |
+          pnpm --dir web install --frozen-lockfile
+          pnpm --dir web test
+
+      # continue-on-error: Codecov being unreachable is not a reason to fail a
+      # pull request. The other jobs say whether the code is good.
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v7
+        with:
+          files: ./coverage.txt
+          flags: unittests
+          name: codecov
+          use_oidc: true
+        continue-on-error: true
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - uses: jdx/mise-action@v4
+        with:
+          cache: true
+
+      - name: Run golangci-lint
+        run: golangci-lint run --timeout=5m ./...
+
+      # The release builds from the tagged tree as it is, so go.mod and go.sum
+      # must already be tidy there.
+      - name: Check go.mod and go.sum are tidy
+        run: go mod tidy -diff
+
+      # The Tag workflow checks these against the version it tags. Checking
+      # here that they agree with each other catches a partial bump early.
+      - name: Check the version strings agree
+        run: .github/scripts/check-version.sh
+
+      # tsc, oxlint and prettier.
+      - name: Lint the web UI
+        run: |
+          pnpm --dir web install --frozen-lockfile
+          pnpm --dir web lint
+
+  dogfood:
+    name: Dogfood
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - uses: jdx/mise-action@v4
+        with:
+          cache: true
+
+      # shrink first: a declaration it unexports becomes private to its file,
+      # and only declscope then reports a crossing. Silence is the assertion.
+      - name: Run declscope shrink
+        run: declscope shrink ./...
+
+      - name: Run declscope
+        run: declscope ./...
+
+  release-build:
+    name: Release build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - uses: jdx/mise-action@v4
+        with:
+          cache: true
+
+      # Builds every platform as the Release workflow would, without
+      # publishing, so a broken .goreleaser.yaml shows before a tag does.
+      - name: Build a snapshot with goreleaser
+        uses: goreleaser/goreleaser-action@v7
+        with:
+          distribution: goreleaser
+          version: "2.17.1"
+          args: release --snapshot --clean

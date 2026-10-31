@@ -1,0 +1,29 @@
+<!doctype html>
+<!--
+  The source of social-preview.png, in the layout of the other mpyw
+  repositories. Capture it at 1280x640 after an edit:
+
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new \
+      --hide-scrollbars --window-size=1280,640 --virtual-time-budget=5000 \
+      --screenshot="$PWD/social-preview.png" "file://$PWD/social-preview.html"
+-->
+<html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Lexend:wght@600;700&family=JetBrains+Mono:wght@400&display=block" rel="stylesheet">
+<style>
+html,body{margin:0;width:1280px;height:640px;overflow:hidden;
+  background:linear-gradient(110deg,#1f1d3d 0%,#2c2860 45%,#3b2f7d 100%)}
+.wrap{position:absolute;inset:0;display:flex;align-items:center;gap:64px;padding-left:72px}
+img{width:552px;height:552px;flex:none;filter:drop-shadow(0 18px 28px rgb(0 0 0 / .35))}
+h1{font:700 128px/1 Lexend,sans-serif;letter-spacing:-0.03em;color:#fff;margin:0 0 40px}
+p{margin:0}
+.tag{font:600 34px/1.2 Lexend,sans-serif;color:#45c8f0}
+.sub{margin-top:30px;font:400 20px/1.4 "JetBrains Mono",monospace;color:#a99cd9}
+.bar{margin-top:34px;width:80px;height:8px;border-radius:4px;background:#45c8f0}
+</style></head><body><div class="wrap">
+<img src="icon.png" alt="">
+<div>
+<h1>pkgsight</h1>
+<p class="tag">A map of your Go module.</p>
+<p class="sub">Packages, call flows, and notes<br>in your language.</p>
+<div class="bar"></div>
+</div></div></body></html>
