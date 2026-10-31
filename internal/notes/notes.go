@@ -37,6 +37,9 @@ type Note struct {
 	Doc string `json:"doc,omitempty"`
 	// Body is a longer explanation for the side panel.
 	Body string `json:"body,omitempty"`
+	// Fingerprint is the code the note was written for, as the freshness
+	// package hashes it.
+	Fingerprint string `json:"fingerprint,omitempty"`
 }
 
 // FuncNote explains a function, and some of its lines.
@@ -158,7 +161,7 @@ func Open(root string) (*Store, error) {
 	}
 	for _, e := range entries {
 		lang, ok := strings.CutSuffix(e.Name(), ".json")
-		if !ok || !validLang(lang) {
+		if !ok || !validLang(lang) || e.IsDir() {
 			continue
 		}
 		b, err := os.ReadFile(filepath.Join(s.dir, e.Name()))
@@ -190,6 +193,12 @@ func (s *Store) Langs() []string {
 func (s *Store) Book(lang string) Book {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.copyBook(lang)
+}
+
+// copyBook copies the book of lang, with its maps made. The caller holds
+// s.mu.
+func (s *Store) copyBook(lang string) Book {
 	out := Book{Packages: map[string]Note{}, Funcs: map[string]FuncNote{}}
 	if b := s.books[lang]; b != nil {
 		for k, v := range b.Packages {
@@ -211,16 +220,9 @@ func (s *Store) Update(lang string, edit func(*Book)) error {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	b := s.books[lang]
-	if b == nil {
-		b = &Book{}
-	}
-	if b.Packages == nil {
-		b.Packages = map[string]Note{}
-	}
-	if b.Funcs == nil {
-		b.Funcs = map[string]FuncNote{}
-	}
+	// Edit a copy, so a failed write leaves the book as the file has it.
+	copied := s.copyBook(lang)
+	b := &copied
 	edit(b)
 	if err := s.write(lang, b); err != nil {
 		return err
@@ -258,7 +260,8 @@ func (s *Store) write(lang string, b *Book) error {
 	if err != nil {
 		return err
 	}
-	// Gone after the rename; left behind only when a step below fails.
+	// Cleans up when a step below fails. After the rename the name is gone,
+	// and this does nothing.
 	defer func() { _ = os.Remove(tmp.Name()) }()
 	// CreateTemp makes the file private, but the notes are for the team.
 	if err := tmp.Chmod(0o644); err != nil {

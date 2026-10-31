@@ -85,6 +85,25 @@ Tell me in a few lines what you wrote when you are done.`, a["lang"], a["package
 Tell me in a few lines what you wrote when you are done.`, a["lang"], a["function"], depth)
 		}),
 	},
+	{
+		prompt: &mcp.Prompt{
+			Name:        "refresh_notes",
+			Description: "Rewrite the notes whose code changed, and delete those whose code is gone",
+			Arguments:   []*mcp.PromptArgument{promptLangArg},
+		},
+		handler: promptFor(func(a map[string]string) string {
+			return fmt.Sprintf(`Bring the pkgsight notes in %q up to date with the code.
+
+1. Call stale_notes with that language.
+2. For each stale function, read it with the function tool and rewrite its
+   note with write_function_note. Keep what still holds, and fix the rest.
+3. For each stale package, read it with the package tool and rewrite its
+   note with write_package_note.
+4. Delete the orphaned notes with delete_notes.
+
+Tell me in a few lines what changed when you are done.`, a["lang"])
+		}),
+	},
 }
 
 var promptLangArg = &mcp.PromptArgument{

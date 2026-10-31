@@ -116,6 +116,13 @@ type FuncDetail struct {
 	Callers []Func `json:"callers"`
 }
 
+// SkippedPackage is a package of the module that the call graph leaves out,
+// because it does not type-check.
+type SkippedPackage struct {
+	Path  string `json:"path"`
+	Error string `json:"error"`
+}
+
 // EntryReason tells why a function is offered as a place to start reading.
 type EntryReason string
 

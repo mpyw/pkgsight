@@ -3,8 +3,8 @@ package server
 import (
 	"fmt"
 	"net/http"
-	"strings"
 
+	"github.com/mpyw/pkgsight/internal/freshness"
 	"github.com/mpyw/pkgsight/internal/model"
 	"github.com/mpyw/pkgsight/internal/notes"
 )
@@ -13,10 +13,18 @@ import (
 // line note placed on a line of the current source.
 type NotesView struct {
 	// Langs lists every language that has notes.
-	Langs    []string              `json:"langs"`
-	Lang     string                `json:"lang"`
-	Packages map[string]notes.Note `json:"packages"`
-	Funcs    map[string]FuncNotes  `json:"funcs"`
+	Langs    []string                `json:"langs"`
+	Lang     string                  `json:"lang"`
+	Packages map[string]PackageNotes `json:"packages"`
+	Funcs    map[string]FuncNotes    `json:"funcs"`
+}
+
+// PackageNotes is the note of a package, and whether it still holds.
+type PackageNotes struct {
+	notes.Note
+	// Stale marks a note whose code changed since it was written. It is
+	// left unset while the call graph is building.
+	Stale bool `json:"stale,omitzero"`
 }
 
 // FuncNotes is the note of a function with its lines placed.
@@ -25,6 +33,7 @@ type FuncNotes struct {
 	// Lines are left out while the call graph, which knows where each
 	// function is, is still building.
 	Lines []notes.Resolved `json:"lines,omitempty"`
+	Stale bool             `json:"stale,omitzero"`
 }
 
 //declscope:shared // routes in server.go serves it
@@ -34,16 +43,23 @@ func (s *Server) notesView(w http.ResponseWriter, r *http.Request) {
 	v := NotesView{
 		Langs:    s.notes.Langs(),
 		Lang:     lang,
-		Packages: book.Packages,
+		Packages: make(map[string]PackageNotes, len(book.Packages)),
 		Funcs:    make(map[string]FuncNotes, len(book.Funcs)),
 	}
 	g, _ := s.callGraph()
-	files := map[string][]string{}
+	var report freshness.Report
+	code := freshness.New(s.model, g, s.readSource)
+	if g != nil {
+		report = code.Check(book)
+	}
+	for path, n := range book.Packages {
+		v.Packages[path] = PackageNotes{Note: n, Stale: report.Packages[path] == freshness.Stale}
+	}
 	for id, n := range book.Funcs {
-		fn := FuncNotes{Note: n.Note}
+		fn := FuncNotes{Note: n.Note, Stale: report.Funcs[id] == freshness.Stale}
 		if g != nil {
 			if d, ok := g.Func(id); ok {
-				fn.Lines = s.placedNotes(n, d.Func, files)
+				fn.Lines = placedNotes(code, n, d.Func)
 			}
 		}
 		v.Funcs[id] = fn
@@ -51,19 +67,13 @@ func (s *Server) notesView(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, v, http.StatusOK)
 }
 
-// placedNotes places the line notes of n in fn, reading each file once
-// through cache.
-func (s *Server) placedNotes(n notes.FuncNote, fn model.Func, cache map[string][]string) []notes.Resolved {
-	if len(n.Lines) == 0 || fn.File == "" {
+// placedNotes places the line notes of n in fn. A file that cannot be read
+// leaves every note stale.
+func placedNotes(code *freshness.Code, n notes.FuncNote, fn model.Func) []notes.Resolved {
+	if len(n.Lines) == 0 {
 		return nil
 	}
-	src, ok := cache[fn.File]
-	if !ok {
-		if b, err := s.readSource(fn.File); err == nil {
-			src = strings.Split(string(b), "\n")
-		}
-		cache[fn.File] = src
-	}
+	src, _ := code.Lines(fn.File)
 	return notes.Place(n, src, fn.Line, fn.FirstLine(), fn.EndLine)
 }
 

@@ -1,15 +1,15 @@
-package load_test
+package load
 
 import (
 	"context"
+	"strings"
 	"testing"
 
-	"github.com/mpyw/pkgsight/internal/load"
 	"github.com/mpyw/pkgsight/internal/model"
 )
 
 func TestGraph(t *testing.T) {
-	g, err := load.Graph(context.Background(), "testdata/sample", "./...")
+	g, err := Graph(context.Background(), "testdata/sample", "./...")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -34,6 +34,41 @@ func TestGraph(t *testing.T) {
 	}
 	if len(g.Modules) != 1 || !g.Modules[0].Main || g.Modules[0].Path != "example.com/sample" {
 		t.Errorf("Modules = %+v", g.Modules)
+	}
+	// go list -e reports a package it cannot load, rather than failing. The
+	// package that imports it shows the error too, where the import is.
+	if broken := byPath["example.com/sample/broken"]; !strings.Contains(broken.Error, "example.com/sample/nope") {
+		t.Errorf("broken = %+v", broken)
+	}
+	// A package that cannot be found is no part of the standard library,
+	// which the map hides by default.
+	if nope := byPath["example.com/sample/nope"]; nope.Kind != model.KindExt || nope.Error == "" {
+		t.Errorf("nope = %+v", nope)
+	}
+	// Only the package that writes the import shows the error, not those
+	// that import it in turn.
+	if uses := byPath["example.com/sample/uses"]; uses.Error != "" {
+		t.Errorf("uses = %+v", uses)
+	}
+}
+
+func TestGraphInMissingDirectory(t *testing.T) {
+	_, err := Graph(context.Background(), "testdata/missing", "./...")
+	if err == nil || !strings.Contains(err.Error(), "testdata/missing") {
+		t.Errorf("err = %v, want one naming the directory", err)
+	}
+}
+
+func TestGraphWithBadPattern(t *testing.T) {
+	_, err := Graph(context.Background(), "testdata/sample", "-not-a-flag")
+	if err == nil || !strings.Contains(err.Error(), "go list") {
+		t.Errorf("err = %v", err)
+	}
+}
+
+func TestDecodeRejectsGarbage(t *testing.T) {
+	if _, err := decode("/r", []byte(`{"ImportPath": "a"} {`)); err == nil || !strings.Contains(err.Error(), "decode go list output") {
+		t.Errorf("err = %v", err)
 	}
 }
 

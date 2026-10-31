@@ -27,6 +27,7 @@ import (
 // Server answers the API. The package graph is there from the start; the
 // call graph arrives later through SetCalls, since it takes longer to build.
 type Server struct {
+	//declscope:shared // notes.go reads the code its notes describe
 	model  *model.Graph
 	graph  []byte
 	root   string
@@ -135,12 +136,15 @@ func (s *Server) status(w http.ResponseWriter, _ *http.Request) {
 		State string `json:"state"`
 		Error string `json:"error,omitempty"`
 		Took  int64  `json:"tookMs,omitzero"`
+		// Skipped lists the packages that do not type-check, whose
+		// functions are missing from the call graph.
+		Skipped []model.SkippedPackage `json:"skipped,omitempty"`
 	}{State: "pending"}
 	switch {
 	case s.callsErr != nil:
 		st.State, st.Error = "error", s.callsErr.Error()
 	case s.calls != nil:
-		st.State, st.Took = "ready", s.took.Milliseconds()
+		st.State, st.Took, st.Skipped = "ready", s.took.Milliseconds(), s.calls.Skipped()
 	}
 	writeJSON(w, st, http.StatusOK)
 }

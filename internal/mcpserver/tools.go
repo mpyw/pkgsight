@@ -8,16 +8,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"go/parser"
-	"go/token"
 	"net/http"
-	"path"
 	"slices"
 	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/mpyw/pkgsight/internal/callgraph"
+	"github.com/mpyw/pkgsight/internal/freshness"
 	"github.com/mpyw/pkgsight/internal/model"
 	"github.com/mpyw/pkgsight/internal/notes"
 )
@@ -60,6 +58,9 @@ How to work:
 - Write every note in the language the user asks for, given as a BCP 47 tag
   such as "ja". Keep identifiers and code as they are.
 - Read the callees before you summarize a caller.
+- A note keeps a fingerprint of its code. When the code changes, the note
+  turns stale. The stale_notes tool lists those, and the notes whose code
+  is gone. Rewrite a stale note from the code as it is now.
 - Writing a note replaces the earlier note of the same package or function.
 - The browser shows each note as soon as you write it.`
 
@@ -107,6 +108,10 @@ func Handler(b Backend) http.Handler {
 		Description: "Write the note of a function in one language, replacing the earlier one: a summary, an optional body, and optional notes above lines of the function.",
 	}, text(s.writeFunctionNote))
 	mcp.AddTool(m, &mcp.Tool{
+		Name:        "stale_notes",
+		Description: "List the notes of one language whose code changed since they were written, and those whose package or function is gone.",
+	}, text(s.staleNotes))
+	mcp.AddTool(m, &mcp.Tool{
 		Name:        "delete_notes",
 		Description: "Delete notes of one language: of some packages, of some functions, or all of them.",
 	}, text(s.deleteNotes))
@@ -142,6 +147,12 @@ func (s *tools) needCalls() (*callgraph.Graph, error) {
 		return nil, errBuilding
 	}
 	return g, nil
+}
+
+// code reads the module's code for fingerprints. g may be nil while the
+// call graph is building, which leaves only the doc comments readable.
+func (s *tools) code(g *callgraph.Graph) *freshness.Code {
+	return freshness.New(s.Graph, g, s.ReadSource)
 }
 
 func (s *tools) ownPackage(path string) (model.Package, bool) {
@@ -188,11 +199,17 @@ func (s *tools) overview(overviewIn) (string, error) {
 	if len(langs) == 0 {
 		b.WriteString("Notes: none yet\n")
 	}
+	g, _ := s.Calls()
 	for _, l := range langs {
 		book := s.Notes.Book(l)
-		fmt.Fprintf(&b, "Notes in %s: %d packages, %d functions\n", l, len(book.Packages), len(book.Funcs))
+		fmt.Fprintf(&b, "Notes in %s: %d packages, %d functions", l, len(book.Packages), len(book.Funcs))
+		if g != nil {
+			if n := len(s.code(g).Check(book).Problems()); n > 0 {
+				fmt.Fprintf(&b, ", %d stale or orphaned (see stale_notes)", n)
+			}
+		}
+		b.WriteString("\n")
 	}
-	g, _ := s.Calls()
 	b.WriteString("\nPackages:\n")
 	for _, p := range s.Graph.Packages {
 		if p.Kind != model.KindOwn {
@@ -218,6 +235,12 @@ func (s *tools) overview(overviewIn) (string, error) {
 	for _, e := range g.Entries() {
 		fmt.Fprintf(&b, "- %s (%s)\n", e.ID, e.Reason)
 	}
+	if skipped := g.Skipped(); len(skipped) > 0 {
+		b.WriteString("\nLeft out of the call graph, since they do not type-check:\n")
+		for _, p := range skipped {
+			fmt.Fprintf(&b, "- %s: %s\n", p.Path, p.Error)
+		}
+	}
 	return b.String(), nil
 }
 
@@ -233,14 +256,20 @@ func (s *tools) packageInfo(in packageIn) (string, error) {
 	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "Package %s (package %s)\nDirectory: %s\n", p.Path, p.Name, p.Dir)
-	if doc := s.packageDoc(p); doc != "" {
+	calls, _ := s.Calls()
+	code := s.code(calls)
+	if doc := code.PackageDoc(p); doc != "" {
 		fmt.Fprintf(&b, "Doc comment:\n%s\n", indentText(doc))
 	}
 	var book notes.Book
 	if in.Lang != "" {
 		book = s.Notes.Book(in.Lang)
 		if n, ok := book.Packages[p.Path]; ok {
-			writeNote(&b, in.Lang, n)
+			var state freshness.State
+			if calls != nil {
+				state = code.Check(notes.Book{Packages: map[string]notes.Note{p.Path: n}}).Packages[p.Path]
+			}
+			writeNote(&b, in.Lang, n, state)
 		}
 	}
 	fmt.Fprintf(&b, "Imports: %s\n", list(p.Imports))
@@ -301,7 +330,8 @@ func (s *tools) function(in functionIn) (string, error) {
 		lines := strings.Split(string(src), "\n")
 		var placed map[int][]notes.Resolved
 		if n, ok := book.Funcs[d.ID]; ok {
-			writeNote(&b, in.Lang, n.Note)
+			state := s.code(g).Check(notes.Book{Funcs: map[string]notes.FuncNote{d.ID: n}}).Funcs[d.ID]
+			writeNote(&b, in.Lang, n.Note, state)
 			placed = map[int][]notes.Resolved{}
 			for _, r := range notes.Place(n, lines, d.Line, d.FirstLine(), d.EndLine) {
 				placed[r.Line] = append(placed[r.Line], r)
@@ -326,8 +356,6 @@ func (s *tools) function(in functionIn) (string, error) {
 			}
 			fmt.Fprintf(&b, "%5d  %s\n", n, lines[n-1])
 		}
-	} else {
-		b.WriteString("Outside the module: no source.\n")
 	}
 	b.WriteString("\nCalls, in order of the first call site:\n")
 	if len(d.Calls) == 0 {
@@ -398,11 +426,17 @@ type packageNoteIn struct {
 }
 
 func (s *tools) writePackageNote(in packageNoteIn) (string, error) {
-	if _, ok := s.ownPackage(in.Path); !ok {
+	p, ok := s.ownPackage(in.Path)
+	if !ok {
 		return "", fmt.Errorf("%q is not a package of the module", in.Path)
 	}
-	err := s.Notes.Update(in.Lang, func(b *notes.Book) {
-		b.Packages[in.Path] = notes.Note{Summary: in.Summary, Doc: in.Doc, Body: in.Body}
+	g, err := s.needCalls()
+	if err != nil {
+		return "", err
+	}
+	print := s.code(g).PackagePrint(p)
+	err = s.Notes.Update(in.Lang, func(b *notes.Book) {
+		b.Packages[in.Path] = notes.Note{Summary: in.Summary, Doc: in.Doc, Body: in.Body, Fingerprint: print}
 	})
 	if err != nil {
 		return "", err
@@ -434,12 +468,14 @@ func (s *tools) writeFunctionNote(in functionNoteIn) (string, error) {
 	if !ok || d.File == "" {
 		return "", fmt.Errorf("%q is not a function of the module; use the search tool", in.ID)
 	}
-	src, err := s.ReadSource(d.File)
+	code := s.code(g)
+	lines, err := code.Lines(d.File)
 	if err != nil {
 		return "", err
 	}
-	lines := strings.Split(string(src), "\n")
-	n := notes.FuncNote{Note: notes.Note{Summary: in.Summary, Doc: in.Doc, Body: in.Body}}
+	// The file is read already, and kept, so this cannot fail.
+	print, _ := code.FuncPrint(d.Func)
+	n := notes.FuncNote{Note: notes.Note{Summary: in.Summary, Doc: in.Doc, Body: in.Body, Fingerprint: print}}
 	for _, l := range in.Lines {
 		if l.Line < d.FirstLine() || l.Line > d.EndLine || l.Line > len(lines) {
 			return "", fmt.Errorf("line %d is outside the function, which spans lines %d-%d with its doc comment", l.Line, d.FirstLine(), d.EndLine)
@@ -455,6 +491,31 @@ func (s *tools) writeFunctionNote(in functionNoteIn) (string, error) {
 		return "", err
 	}
 	return fmt.Sprintf("Saved the note of %s with %d line notes.", d.Name, len(n.Lines)), nil
+}
+
+type staleIn struct {
+	Lang string `json:"lang" jsonschema:"the language, like \"ja\""`
+}
+
+func (s *tools) staleNotes(in staleIn) (string, error) {
+	g, err := s.needCalls()
+	if err != nil {
+		return "", err
+	}
+	problems := s.code(g).Check(s.Notes.Book(in.Lang)).Problems()
+	if len(problems) == 0 {
+		return "Every note in " + in.Lang + " is fresh.", nil
+	}
+	var b strings.Builder
+	for _, p := range problems {
+		switch p.State {
+		case freshness.Stale:
+			fmt.Fprintf(&b, "- stale %s %s: read it again and rewrite its note\n", p.Kind, p.Key)
+		default:
+			fmt.Fprintf(&b, "- orphaned %s %s: it is gone or renamed, so delete its note\n", p.Kind, p.Key)
+		}
+	}
+	return b.String(), nil
 }
 
 type deleteIn struct {
@@ -492,25 +553,12 @@ func (s *tools) deleteNotes(in deleteIn) (string, error) {
 	return fmt.Sprintf("Deleted %d notes.", removed), nil
 }
 
-// packageDoc reads the package comment from the files of p. The graph
-// keeps only its first sentence.
-func (s *tools) packageDoc(p model.Package) string {
-	var docs []string
-	for _, f := range p.Files {
-		src, err := s.ReadSource(path.Join(p.Dir, f))
-		if err != nil {
-			continue
-		}
-		file, err := parser.ParseFile(token.NewFileSet(), f, src, parser.PackageClauseOnly|parser.ParseComments)
-		if err == nil && file.Doc != nil {
-			docs = append(docs, strings.TrimSpace(file.Doc.Text()))
-		}
+func writeNote(b *strings.Builder, lang string, n notes.Note, state freshness.State) {
+	if state == freshness.Stale {
+		fmt.Fprintf(b, "Note (%s, stale: the code changed since it was written): %s\n", lang, n.Summary)
+	} else {
+		fmt.Fprintf(b, "Note (%s): %s\n", lang, n.Summary)
 	}
-	return strings.Join(docs, "\n\n")
-}
-
-func writeNote(b *strings.Builder, lang string, n notes.Note) {
-	fmt.Fprintf(b, "Note (%s): %s\n", lang, n.Summary)
 	if n.Doc != "" {
 		fmt.Fprintf(b, "Translated doc comment:\n%s\n", indentText(n.Doc))
 	}

@@ -124,3 +124,122 @@ func TestCallWithoutPosition(t *testing.T) {
 		t.Errorf("a call at no position encodes as %s", b)
 	}
 }
+
+// describeCalls renders the calls of fn into the module, one per line.
+func describeCalls(t *testing.T, g *callgraph.Graph, id string) []string {
+	t.Helper()
+	d, ok := g.Func(id)
+	if !ok {
+		t.Fatalf("no function %s", id)
+	}
+	var out []string
+	for _, c := range d.Calls {
+		s := string(c.Dispatch) + " " + c.To.Name + " " + string(c.To.Kind)
+		if c.Maybe {
+			s += " maybe"
+		}
+		if c.Through != "" {
+			s += " through " + c.Through
+		}
+		out = append(out, s)
+	}
+	return out
+}
+
+func TestEdges(t *testing.T) {
+	g, err := callgraph.Build(context.Background(), "testdata/edges", "./...")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		fn   string
+		want []string
+	}{
+		// The analysis does not see into a generic body, so a function
+		// handed to the module's own generic function is handed through it.
+		{"Generic", []string{"static Map own", "dynamic double own through edges.Map"}},
+		// The writer comes from the standard library, so the module's
+		// writers are only a guess.
+		{"Guess", []string{"interface (*File).Write std", "interface (sink).Write own maybe"}},
+		// The wrapper SSA makes for the promoted method is looked through.
+		{"Promoted", []string{"interface (sink).Write own"}},
+		// So is the one for the method value.
+		{"Bound", []string{"static (sink).Write own"}},
+		// A generic library function is named by its origin.
+		{"Sorted", []string{
+			"dynamic less own through slices.SortFunc",
+			"static SortFunc std",
+			"dynamic Sorted$1 own through slices.ContainsFunc",
+			"static ContainsFunc std",
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.fn, func(t *testing.T) {
+			if got := describeCalls(t, g, "example.com/edges."+tt.fn); !equal(got, tt.want) {
+				t.Errorf("calls = %q, want %q", got, tt.want)
+			}
+		})
+	}
+
+	if c, _ := g.Func("example.com/edges.cleanup"); len(c.Callers) != 1 {
+		t.Errorf("callers of cleanup = %+v, want Twice once", c.Callers)
+	}
+	if got := describeCalls(t, g, "example.com/edges.Twice"); len(got) != 2 {
+		t.Errorf("calls of Twice = %q, want the call and the defer", got)
+	}
+
+	// Guess only guesses at Write, so it is no caller.
+	sink, _ := g.Func("(example.com/edges.sink).Write")
+	var callers []string
+	for _, c := range sink.Callers {
+		callers = append(callers, c.Name)
+	}
+	if want := []string{"Promoted", "Bound"}; !equal(callers, want) {
+		t.Errorf("callers of (sink).Write = %v, want %v", callers, want)
+	}
+}
+
+func TestSkipsPackagesThatDoNotTypeCheck(t *testing.T) {
+	g, err := callgraph.Build(context.Background(), "testdata/broken", "./...")
+	if err != nil {
+		t.Fatal(err)
+	}
+	skipped := g.Skipped()
+	if len(skipped) != 1 || skipped[0].Path != "example.com/broken" || !strings.Contains(skipped[0].Error, "cannot use") {
+		t.Errorf("Skipped() = %+v", skipped)
+	}
+	if fs := g.Package("example.com/broken"); len(fs) != 0 {
+		t.Errorf("functions of a package that does not type-check: %+v", fs)
+	}
+}
+
+func TestBuildInMissingDirectory(t *testing.T) {
+	_, err := callgraph.Build(context.Background(), "testdata/missing", "./...")
+	if err == nil || !strings.Contains(err.Error(), "testdata/missing") {
+		t.Errorf("err = %v, want one naming the directory", err)
+	}
+}
+
+func TestSearch(t *testing.T) {
+	g, err := callgraph.Build(context.Background(), "testdata/sample", "./...")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, f := range g.Search("RUN", 10) {
+		names = append(names, f.PkgName+"."+f.Name)
+	}
+	// Shortest first, then by ID. Matching ignores case.
+	if want := []string{"app.Run", "app.Run$1"}; !equal(names, want) {
+		t.Errorf("Search(RUN) = %v, want %v", names, want)
+	}
+	if got := g.Search("app.", 3); len(got) != 3 {
+		t.Errorf("Search with limit 3 returned %d", len(got))
+	}
+	if got := g.Search("nothing matches this", 10); len(got) != 0 {
+		t.Errorf("Search(no match) = %+v", got)
+	}
+	if _, ok := g.Func("nope"); ok {
+		t.Error("Func(nope) found something")
+	}
+}

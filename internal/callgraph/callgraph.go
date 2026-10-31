@@ -8,11 +8,13 @@
 package callgraph
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"go/ast"
 	"go/doc"
 	"go/token"
+	"os"
 	"path/filepath"
 	"slices"
 	"sort"
@@ -33,7 +35,8 @@ type Graph struct {
 	funcs   map[string]*model.FuncDetail
 	entries []model.Entry
 	// byPkg lists the IDs of each package's functions in source order.
-	byPkg map[string][]string
+	byPkg   map[string][]string
+	skipped []model.SkippedPackage
 }
 
 // Build loads patterns in dir and builds their call graph.
@@ -42,10 +45,23 @@ func Build(ctx context.Context, dir string, patterns ...string) (*Graph, error) 
 	if err != nil {
 		return nil, err
 	}
+	// Without this, the go command fails to start in a missing directory,
+	// and reports that it cannot find itself.
+	if _, err := os.Stat(root); err != nil {
+		return nil, err
+	}
 	cfg := &packages.Config{Context: ctx, Dir: root, Mode: packages.LoadSyntax}
 	pkgs, err := packages.Load(cfg, patterns...)
 	if err != nil {
 		return nil, err
+	}
+	// SSA leaves out a package that does not type-check, and every function
+	// in it. Say which, so the gap is not silent.
+	var skipped []model.SkippedPackage
+	for _, p := range pkgs {
+		if len(p.Errors) > 0 {
+			skipped = append(skipped, model.SkippedPackage{Path: p.PkgPath, Error: p.Errors[0].Error()})
+		}
 	}
 	prog, _ := ssautil.Packages(pkgs, 0)
 	prog.Build()
@@ -64,7 +80,9 @@ func Build(ctx context.Context, dir string, patterns ...string) (*Graph, error) 
 		vta:   vta.CallGraph(ssautil.AllFunctions(prog), hierarchy),
 		cha:   hierarchy,
 	}
-	return b.build(), nil
+	g := b.build()
+	g.skipped = skipped
+	return g, nil
 }
 
 type builder struct {
@@ -140,16 +158,23 @@ func (b *builder) build() *Graph {
 		for _, c := range calls {
 			sort.Ints(c.Lines)
 			d.Calls = append(d.Calls, *c)
+			// A guess does not make a caller. Otherwise every type with a
+			// Write or an Error method would list every caller of the
+			// interface, and none would be an entry point.
 			if to, ok := g.funcs[c.To.ID]; ok && !c.Maybe && !containsFunc(to.Callers, d.ID) {
 				to.Callers = append(to.Callers, d.Func)
 			}
 		}
 		sort.Slice(d.Calls, func(i, j int) bool {
 			a, b := d.Calls[i], d.Calls[j]
-			if first(a.Lines) != first(b.Lines) {
-				return first(a.Lines) < first(b.Lines)
-			}
-			return a.To.ID < b.To.ID
+			// calls is a map, so every field of the key breaks ties.
+			return cmp.Or(
+				cmp.Compare(first(a.Lines), first(b.Lines)),
+				cmp.Compare(a.To.ID, b.To.ID),
+				cmp.Compare(a.Mode, b.Mode),
+				cmp.Compare(a.Through, b.Through),
+				boolCompare(a.Maybe, b.Maybe),
+			) < 0
 		})
 	}
 
@@ -218,6 +243,10 @@ var spawners = map[string]bool{
 func (b *builder) recordCallbacks(calls map[callKey]*model.Call, site ssa.CallInstruction) {
 	common := site.Common()
 	callee := common.StaticCallee()
+	// An instance of the module's own generic function is synthetic, so it
+	// passes too. That is right: the analysis does not see into the generic
+	// body either, so the instance calls the function out of sight, as a
+	// library would.
 	if callee == nil || b.isOwn(callee) {
 		return
 	}
@@ -342,6 +371,11 @@ func (g *Graph) Package(path string) []model.FuncDetail {
 	return out
 }
 
+// Skipped returns the packages left out because they do not type-check.
+func (g *Graph) Skipped() []model.SkippedPackage {
+	return g.skipped
+}
+
 // Entries returns the functions worth starting a call flow from.
 func (g *Graph) Entries() []model.Entry {
 	return g.entries
@@ -367,6 +401,16 @@ func (g *Graph) Search(q string, limit int) []model.Func {
 		hits = hits[:limit]
 	}
 	return hits
+}
+
+func boolCompare(a, b bool) int {
+	switch {
+	case a == b:
+		return 0
+	case a:
+		return 1
+	}
+	return -1
 }
 
 func first(lines []int) int {

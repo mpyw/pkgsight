@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"sort"
@@ -18,7 +19,7 @@ import (
 
 // fields are the only fields go list computes. Asking for fewer fields
 // halves the time on a large tree.
-const fields = "ImportPath,Name,Dir,Doc,GoFiles,CgoFiles,Imports,Standard,Module,Error"
+const fields = "ImportPath,Name,Dir,Doc,GoFiles,CgoFiles,Imports,Standard,Module,Error,DepsErrors"
 
 type listed struct {
 	ImportPath string
@@ -34,13 +35,24 @@ type listed struct {
 		Version string
 		Main    bool
 	}
-	Error *struct{ Err string }
+	Error      *listError
+	DepsErrors []listError
+}
+
+type listError struct {
+	ImportStack []string
+	Err         string
 }
 
 // Graph runs go list in dir on patterns and their dependencies.
 func Graph(ctx context.Context, dir string, patterns ...string) (*model.Graph, error) {
 	root, err := filepath.Abs(dir)
 	if err != nil {
+		return nil, err
+	}
+	// Without this, the go command fails to start in a missing directory,
+	// and reports that it cannot find itself.
+	if _, err := os.Stat(root); err != nil {
 		return nil, err
 	}
 	args := append([]string{"list", "-e", "-deps", "-json=" + fields}, patterns...)
@@ -79,7 +91,7 @@ func decode(root string, out []byte) (*model.Graph, error) {
 		p := model.Package{
 			Path:    l.ImportPath,
 			Name:    l.Name,
-			Kind:    model.KindStd,
+			Kind:    model.KindExt,
 			Dir:     l.Dir,
 			Doc:     l.Doc,
 			Files:   append(append([]string{}, l.GoFiles...), l.CgoFiles...),
@@ -91,12 +103,22 @@ func decode(root string, out []byte) (*model.Graph, error) {
 				p.Imports = append(p.Imports, imp)
 			}
 		}
+		if l.Standard {
+			p.Kind = model.KindStd
+		}
 		if l.Error != nil {
 			p.Error = l.Error.Err
 		}
+		// A package that fails to import shows its error, but so does the
+		// one that imports it: that is where the import is written. Errors
+		// further down are shown only where they happen.
+		for _, e := range l.DepsErrors {
+			if p.Error == "" && len(e.ImportStack) > 0 && e.ImportStack[len(e.ImportStack)-1] == l.ImportPath {
+				p.Error = e.Err
+			}
+		}
 		if m := l.Module; m != nil && !l.Standard {
 			p.Module = m.Path
-			p.Kind = model.KindExt
 			if m.Main {
 				p.Kind = model.KindOwn
 				if rel, err := filepath.Rel(root, l.Dir); err == nil {

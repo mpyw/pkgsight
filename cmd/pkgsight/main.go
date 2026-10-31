@@ -1,152 +1,109 @@
+//declscope:core
+
 // Command pkgsight draws the structure of a Go codebase in the browser.
+//
+//	pkgsight serve [options] [packages]         the map, in a browser
+//	pkgsight notes check [options] [packages]   notes that no longer hold
 package main
 
 import (
 	"context"
 	"errors"
-	"flag"
 	"fmt"
-	"log"
-	"net"
-	"net/http"
+	"io"
 	"os"
-	"os/exec"
 	"os/signal"
-	"runtime"
-	"runtime/debug"
-	"time"
 
-	"github.com/mpyw/pkgsight/internal/callgraph"
-	"github.com/mpyw/pkgsight/internal/load"
-	"github.com/mpyw/pkgsight/internal/notes"
-	"github.com/mpyw/pkgsight/internal/server"
-	"github.com/mpyw/pkgsight/web"
+	"github.com/urfave/cli/v3"
 )
 
-const usage = `Usage: pkgsight serve [flags] [packages]
-
-Commands:
-  serve     Analyze packages (default ./...) and open the map in a browser
-  version   Print the version
-
-The server also answers MCP at /mcp, so an assistant can write notes that
-the browser shows next to the code:
-
-  claude mcp add --transport http pkgsight http://localhost:7878/mcp
-`
-
 func main() {
-	log.SetFlags(0)
-	if len(os.Args) < 2 {
-		fmt.Fprint(os.Stderr, usage)
-		os.Exit(2)
-	}
-	switch os.Args[1] {
-	case "serve":
-		if err := serve(os.Args[2:]); err != nil {
-			log.Fatal(err)
-		}
-	case "version", "-version", "--version":
-		fmt.Println(currentVersion())
-	case "-h", "-help", "--help", "help":
-		fmt.Print(usage)
-	default:
-		fmt.Fprintf(os.Stderr, "unknown command %q\n\n%s", os.Args[1], usage)
-		os.Exit(2)
-	}
-}
-
-// version is the release this binary was built from, written at link time
-// with -X main.version=<version>. .goreleaser.yaml passes it.
-var version string
-
-// currentVersion falls back to the module version that go install records,
-// and to "devel" for a build from a checkout.
-func currentVersion() string {
-	if version != "" {
-		return version
-	}
-	if info, ok := debug.ReadBuildInfo(); ok && info.Main.Version != "" && info.Main.Version != "(devel)" {
-		return info.Main.Version
-	}
-	return "devel"
-}
-
-func serve(args []string) error {
-	fs := flag.NewFlagSet("serve", flag.ExitOnError)
-	addr := fs.String("addr", "localhost:7878", "address to listen on")
-	dir := fs.String("C", ".", "directory to run in")
-	open := fs.Bool("open", true, "open the map in the default browser")
-	_ = fs.Parse(args)
-	patterns := fs.Args()
-	if len(patterns) == 0 {
-		patterns = []string{"./..."}
-	}
-
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
-	defer stop()
-
-	start := time.Now()
-	g, err := load.Graph(ctx, *dir, patterns...)
-	if err != nil {
-		return err
-	}
-	log.Printf("loaded %d packages in %s", len(g.Packages), time.Since(start).Round(time.Millisecond))
-
-	ln, err := net.Listen("tcp", *addr)
-	if err != nil {
-		return err
-	}
-	url := "http://" + ln.Addr().String()
-	log.Printf("serving on %s, and MCP on %s/mcp", url, url)
-	if *open {
-		openBrowser(url)
-	}
-
-	store, err := notes.Open(g.Root)
-	if err != nil {
-		return err
-	}
-	api := server.New(g, web.Dist(), store, currentVersion())
-	go func() {
-		start := time.Now()
-		calls, err := callgraph.Build(ctx, *dir, patterns...)
-		took := time.Since(start)
-		if err != nil {
-			log.Printf("call graph: %v", err)
-		} else {
-			log.Printf("built the call graph in %s", took.Round(time.Millisecond))
-		}
-		api.SetCalls(calls, err, took)
-	}()
-
-	// Requests share ctx, so open streams end when the server stops.
-	srv := &http.Server{
-		Handler:           api,
-		ReadHeaderTimeout: 5 * time.Second,
-		BaseContext:       func(net.Listener) context.Context { return ctx },
-	}
-	go func() {
-		<-ctx.Done()
-		shutdown, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-		defer cancel()
-		_ = srv.Shutdown(shutdown)
-	}()
-	if err := srv.Serve(ln); !errors.Is(err, http.ErrServerClosed) {
-		return err
-	}
-	return nil
+	code := run(ctx, os.Args, os.Stdout, os.Stderr)
+	stop()
+	os.Exit(code)
 }
 
-func openBrowser(url string) {
-	name := "xdg-open"
-	switch runtime.GOOS {
-	case "darwin":
-		name = "open"
-	case "windows":
-		name = "explorer"
+// run runs the command line in args, the program name first, and returns
+// the exit status. Interrupting ctx stops the server.
+func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
+	err := newRootCommand(stdout, stderr).Run(ctx, args)
+	exit, isExit := errors.AsType[cli.ExitCoder](err)
+	switch {
+	case isExit:
+		if msg := err.Error(); msg != "" {
+			logf(stderr, "pkgsight: %s\n", msg)
+		}
+		return exit.ExitCode()
+	case err != nil:
+		logf(stderr, "pkgsight: %v\n", err)
+		return 1
 	}
-	if err := exec.Command(name, url).Start(); err != nil {
-		log.Printf("open %s yourself: %v", url, err)
+	return 0
+}
+
+// logf writes a diagnostic. A failed write to stderr has nowhere to be
+// reported, so its error is dropped here.
+//
+//declscope:shared // every command reports through it
+func logf(w io.Writer, format string, args ...any) {
+	_, _ = fmt.Fprintf(w, format, args...)
+}
+
+func newRootCommand(stdout, stderr io.Writer) *cli.Command {
+	return &cli.Command{
+		Name:      "pkgsight",
+		Usage:     "see how a Go module is built and how its code runs, in your browser",
+		Version:   currentVersion(),
+		Writer:    stdout,
+		ErrWriter: stderr,
+		// run prints errors and picks the exit status; urfave/cli must not.
+		ExitErrHandler:  func(context.Context, *cli.Command, error) {},
+		HideHelpCommand: true,
+		Suggest:         true,
+		OnUsageError:    usageError,
+		Action:          groupAction,
+		Commands:        []*cli.Command{serveCommand(), notesCommand()},
 	}
+}
+
+// dirFlag is the directory a command analyzes.
+//
+//declscope:shared // every command that analyzes packages takes it
+func dirFlag() cli.Flag {
+	return &cli.StringFlag{
+		Name:    "dir",
+		Aliases: []string{"C"},
+		Value:   ".",
+		Usage:   "the directory to run in",
+	}
+}
+
+// groupAction runs a command that only holds others. Without arguments it
+// shows the help. An argument is a command that does not exist.
+//
+//declscope:shared // notes.go holds its subcommands with it
+func groupAction(_ context.Context, cmd *cli.Command) error {
+	if cmd.Args().Present() {
+		return cli.Exit(fmt.Sprintf("unknown command %q; see %s --help", cmd.Args().First(), cmd.FullName()), 2)
+	}
+	return cli.ShowSubcommandHelp(cmd)
+}
+
+// usageError reports a bad command line once, with exit status 2, as the
+// flag package does. urfave/cli would print it, then return it too.
+//
+//declscope:shared // every command reports a bad command line with it
+func usageError(_ context.Context, _ *cli.Command, err error, _ bool) error {
+	return cli.Exit(err.Error()+"; see --help", 2)
+}
+
+// patterns returns the package patterns of cmd, ./... by default.
+//
+//declscope:shared // every command that analyzes packages takes them
+func patterns(cmd *cli.Command) []string {
+	if cmd.Args().Len() == 0 {
+		return []string{"./..."}
+	}
+	return cmd.Args().Slice()
 }
