@@ -12,7 +12,6 @@ import (
 
 	"github.com/urfave/cli/v3"
 
-	"github.com/mpyw/pkgsight/internal/callgraph"
 	"github.com/mpyw/pkgsight/internal/load"
 	"github.com/mpyw/pkgsight/internal/model"
 	"github.com/mpyw/pkgsight/internal/notes"
@@ -78,7 +77,7 @@ func serveAction(ctx context.Context, cmd *cli.Command) error {
 	api := server.New(g, web.Dist(), store, currentVersion())
 	go func() {
 		start := time.Now()
-		calls, err := serveCallGraph(ctx, logger, dir, pats)
+		calls, err := buildCallGraph(ctx, logger, dir, pats)
 		api.SetCalls(calls, err, time.Since(start))
 		// Watch only now, so a reload never lands before the first build.
 		if cmd.Bool("watch") {
@@ -104,21 +103,6 @@ func serveAction(ctx context.Context, cmd *cli.Command) error {
 	return nil
 }
 
-// serveCallGraph builds the call graph, and logs how it went.
-func serveCallGraph(ctx context.Context, logger *log.Logger, dir string, pats []string) (*callgraph.Graph, error) {
-	start := time.Now()
-	calls, err := callgraph.Build(ctx, dir, pats...)
-	if err != nil {
-		logger.Printf("call graph: %v", err)
-		return nil, err
-	}
-	logger.Printf("built the call graph in %s", time.Since(start).Round(time.Millisecond))
-	for _, p := range calls.Skipped() {
-		logger.Printf("call graph: left out %s, which does not type-check: %s", p.Path, p.Error)
-	}
-	return calls, nil
-}
-
 // serveWatching analyzes the code again each time it changes, until ctx
 // ends, and hands the result to api. g is the package graph to start from.
 func serveWatching(ctx context.Context, logger *log.Logger, api *server.Server, g *model.Graph, dir string, pats []string) {
@@ -138,7 +122,7 @@ func serveWatching(ctx context.Context, logger *log.Logger, api *server.Server, 
 			logger.Printf("reload: %v", err)
 			return
 		}
-		calls, err := serveCallGraph(ctx, logger, dir, pats)
+		calls, err := buildCallGraph(ctx, logger, dir, pats)
 		g = next
 		api.Reload(next, calls, err, time.Since(start))
 		logger.Printf("reloaded after a change, in %s", time.Since(start).Round(time.Millisecond))

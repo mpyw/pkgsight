@@ -61,6 +61,6 @@ func mainCommand(stdout, stderr io.Writer) *cli.Command {
 		Suggest:         true,
 		OnUsageError:    usageError,
 		Action:          groupAction,
-		Commands:        []*cli.Command{serveCommand(), notesCommand()},
+		Commands:        []*cli.Command{serveCommand(), exportCommand(), notesCommand()},
 	}
 }

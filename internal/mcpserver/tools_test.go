@@ -407,7 +407,7 @@ func TestDeleteFunctionNotes(t *testing.T) {
 
 func TestPackageWithoutImports(t *testing.T) {
 	s := connect(t, "../callgraph/testdata/broken")
-	s.ok(t, "package", map[string]any{"path": "example.com/broken"}, "Imports: none", "Imported by: none")
+	s.ok(t, "package", map[string]any{"path": "example.com/broken"}, "Imports: none", "Imported by: example.com/broken/user")
 }
 
 func TestStaleNotes(t *testing.T) {

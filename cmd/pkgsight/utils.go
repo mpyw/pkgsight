@@ -7,8 +7,12 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log"
+	"time"
 
 	"github.com/urfave/cli/v3"
+
+	"github.com/mpyw/pkgsight/internal/callgraph"
 )
 
 // logf writes a diagnostic. A failed write to stderr has nowhere to be
@@ -48,4 +52,19 @@ func patterns(cmd *cli.Command) []string {
 		return []string{"./..."}
 	}
 	return cmd.Args().Slice()
+}
+
+// buildCallGraph builds the call graph, and logs how it went.
+func buildCallGraph(ctx context.Context, logger *log.Logger, dir string, pats []string) (*callgraph.Graph, error) {
+	start := time.Now()
+	calls, err := callgraph.Build(ctx, dir, pats...)
+	if err != nil {
+		logger.Printf("call graph: %v", err)
+		return nil, err
+	}
+	logger.Printf("built the call graph in %s", time.Since(start).Round(time.Millisecond))
+	for _, p := range calls.Skipped() {
+		logger.Printf("call graph: left out %s, which does not type-check: %s", p.Path, p.Error)
+	}
+	return calls, nil
 }

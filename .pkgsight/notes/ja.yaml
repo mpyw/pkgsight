@@ -13,7 +13,7 @@ packages:
 
       > [!NOTE]
       > エラーの表示と終了コードは `runMain` が一手に決める。使い方の誤りは 2、`notes check` の失敗は 1。
-    fingerprint: 3d89e85b31340451
+    fingerprint: e87fed69410ae3ff
   github.com/mpyw/pkgsight/internal/callgraph:
     summary: 自前のパッケージのコールグラフ（どの関数がどれを呼ぶか）を作る
     doc: |-
@@ -36,7 +36,7 @@ packages:
 
       > [!WARNING]
       > 関数 ID（`builder.id`）は注釈の保存キー。形式を変えると、保存済みの注釈がすべて行き場を失う。
-    fingerprint: aeb0b36a13f050c7
+    fingerprint: 6ca7ebb918479651
   github.com/mpyw/pkgsight/internal/freshness:
     summary: 注釈がまだ今のコードを説明しているか判定する
     doc: |-
@@ -118,6 +118,15 @@ packages:
     body: UI は pnpm でビルドして埋め込むので、`go install` で入れたバイナリには入らない。リリースでは GoReleaser の before フックが先に UI をビルドする。
     fingerprint: 8178099324679d2e
 funcs:
+  (*github.com/mpyw/pkgsight/cmd/pkgsight.exportRecorder).Header:
+    summary: http.ResponseWriter の Header。答えを手元のバッファに受ける
+    fingerprint: 344c987b3cf228d8
+  (*github.com/mpyw/pkgsight/cmd/pkgsight.exportRecorder).Write:
+    summary: http.ResponseWriter の Write。答えを手元のバッファに受ける
+    fingerprint: f25666fc5f5b966f
+  (*github.com/mpyw/pkgsight/cmd/pkgsight.exportRecorder).WriteHeader:
+    summary: http.ResponseWriter の WriteHeader。答えを手元のバッファに受ける
+    fingerprint: 1c06c4d8eacee694
   (*github.com/mpyw/pkgsight/internal/callgraph.Graph).Entries:
     summary: Call flow の起点に向く関数を返す
     doc: Entries は、Call flow を始めるのに向いた関数を返す。
@@ -701,6 +710,16 @@ funcs:
     doc: FirstLine は、doc コメントを含めた関数の最初の行。
     body: ソース表示や行注釈の範囲はここから `EndLine` まで。行注釈のオフセットは `Line`（`func` キーワードの行）基準で、doc コメントの行は負のオフセットになる。
     fingerprint: 3e290fccabc3e16f
+  github.com/mpyw/pkgsight/cmd/pkgsight.buildCallGraph:
+    summary: コールグラフを作り、結果をログに出す
+    doc: buildCallGraph はコールグラフを作り、どうだったかをログに出す。
+    body: '`serve` と `export` の両方が使うので、コマンドの共有部品として `utils.go` に置いている。'
+    fingerprint: 2b718697d97299bd
+    lines:
+      - offset: 8
+        hash: 576862c0
+        text: 型チェックに通らないパッケージは、関数ごとコールグラフから消える。黙って消えないよう、パッケージ名と理由をログに出す
+        kind: important
   github.com/mpyw/pkgsight/cmd/pkgsight.currentVersion:
     summary: このバイナリのバージョンを返す
     doc: currentVersion は、go install が記録したモジュールのバージョンにフォールバックし、チェックアウトからのビルドでは "devel" を返す。
@@ -715,6 +734,71 @@ funcs:
     doc: dirFlag は、コマンドが解析するディレクトリ。
     body: '`serve` と `notes check` が同じ定義を使うよう、ここにまとめている。`go -C` に合わせて `-C` を別名にしている。'
     fingerprint: 6bffad73f98cf169
+  github.com/mpyw/pkgsight/cmd/pkgsight.exportAction:
+    summary: 両方のグラフを作り、1 つの HTML に書き出す
+    doc: exportAction は両方のグラフを作り、この同じプロセスのサーバーが答えた内容と一緒にページに書き込む。こうすると、ページは pkgsight serve と同じものを見せる。
+    fingerprint: 70a00678570cc691
+    lines:
+      - offset: 17
+        hash: 0687d6be
+        text: ネットワークには出さず、このプロセスの中でだけ答えるサーバー。注釈の置き方や古さの判定を、`serve` と同じコードで済ませるため
+        kind: note
+  github.com/mpyw/pkgsight/cmd/pkgsight.exportCommand:
+    summary: pkgsight export の定義とフラグ
+    doc: exportCommand は pkgsight export。
+    fingerprint: cdbd5833aaa2510a
+  github.com/mpyw/pkgsight/cmd/pkgsight.exportRequest:
+    summary: このプロセスのサーバーに GET を投げ、答えを手元に受ける
+    doc: exportRequest は、ネットワークを使わずに api から GET の答えを受け取る。
+    fingerprint: a2310fea339bb4d4
+  github.com/mpyw/pkgsight/cmd/pkgsight.exportedData:
+    summary: 埋め込むデータを集めて JSON にする
+    doc: exportedData は、web/src/data/embedded.ts が読むデータを集める。グラフとソースは API と同じ形で入れる。呼び出しグラフの状態、注釈（行の位置と古さの判定を含む）、画像は API 自身から取るので、同じ処理を二度書かずに済む。
+    fingerprint: b3ca53db765796e4
+    lines:
+      - offset: 4
+        hash: 61c68462
+        text: 自分のデータに 200 以外が返るのはバグ。黙って欠けたページを作らないよう、ここで止める
+        kind: important
+      - offset: 54
+        hash: 15ad42b8
+        text: 注釈が指すリポジトリの画像を data URL にして埋め込む。リポジトリの外や存在しない画像は入れない
+      - offset: 60
+        hash: 21e3195f
+        text: < と > をエスケープする。データの中の `</script>` で要素が途中で閉じないため
+        kind: important
+  github.com/mpyw/pkgsight/cmd/pkgsight.exportedData$1:
+    summary: サーバーに聞き、200 でなければ止まる
+    fingerprint: aa0562a9a2bb0163
+  github.com/mpyw/pkgsight/cmd/pkgsight.exportedImages:
+    summary: 注釈の中の、リポジトリ内の画像パスを集める
+    doc: exportedImages は、注釈の中の相対の画像パスを、画面と同じ解決の仕方（ルートから、先頭の ./ を除いて）で列挙する。
+    fingerprint: 7626ef0fa1d77857
+    lines:
+      - offset: 4
+        hash: 721ebd4e
+        text: 'http: などの URL、/ 始まり、# 始まりは画面がそのまま読むので埋め込まない'
+  github.com/mpyw/pkgsight/cmd/pkgsight.exportedPage:
+    summary: ビルド済みの画面とデータを 1 つの HTML にまとめる
+    doc: exportedPage は、ビルド済みの UI とデータを 1 つの HTML ファイルにする。スクリプトとスタイルはその場に埋め込み、データは UI が読む script 要素に入れる。
+    fingerprint: acd57a1a7aa9a79d
+    lines:
+      - offset: 2
+        hash: 351f8136
+        text: UI をビルドしていないバイナリ（go install したものなど）では作れない。理由と直し方を伝える
+      - offset: 15
+        hash: e78ce8b0
+        text: 最初の失敗を返す。後の失敗で上書きすると、原因と違うファイル名が出る
+      - offset: 26
+        hash: 5f26f108
+        text: コード中の `</script` は要素を途中で閉じてしまう。文字列や正規表現の中なら `<\/script` は同じ意味
+        kind: warning
+  github.com/mpyw/pkgsight/cmd/pkgsight.exportedPage$1:
+    summary: 正規表現に合うタグを、ファイルの中身で置き換える
+    fingerprint: 1f3aeef90b3ea1ec
+  github.com/mpyw/pkgsight/cmd/pkgsight.exportedPage$1$1:
+    summary: タグ 1 つをファイルの中身に置き換える。読めなければ最初の失敗を覚える
+    fingerprint: e592038e75404c76
   github.com/mpyw/pkgsight/cmd/pkgsight.groupAction:
     summary: 子コマンドだけを持つコマンドの動作
     doc: groupAction は、ほかのコマンドを束ねるだけのコマンドを実行する。引数がなければヘルプを出す。引数があれば、それは存在しないコマンドだ。
@@ -743,7 +827,7 @@ funcs:
   github.com/mpyw/pkgsight/cmd/pkgsight.mainCommand:
     summary: ルートコマンド pkgsight の定義
     doc: mainCommand は pkgsight で、すべてのコマンドを束ねる。
-    fingerprint: 00d958330be5b4d9
+    fingerprint: dcd5726313134f30
     lines:
       - offset: 8
         hash: e06c00fa
@@ -816,7 +900,7 @@ funcs:
       4. コールグラフは裏で作る
 
       注釈を待ち受けより先に読むのは、注釈ファイルが壊れていたときに、開いたポートを残さず終わるため。
-    fingerprint: 31fc327bc67fe379
+    fingerprint: cb369ada4b516be5
     lines:
       - offset: 11
         hash: 227958ea
@@ -835,7 +919,7 @@ funcs:
   github.com/mpyw/pkgsight/cmd/pkgsight.serveAction$1:
     summary: コールグラフを裏で作ってサーバーに渡し、変更の監視を始める
     body: パッケージ地図は go list だけで描けるので、先に配信を始める。時間のかかるコールグラフ作りは、このゴルーチンで裏で進める。終わるまで、Call flow などの API は 503 を返す。
-    fingerprint: 4e0f659c82da9b37
+    fingerprint: 3300314b29c3f6ce
     lines:
       - offset: 3
         hash: e154763e
@@ -851,15 +935,6 @@ funcs:
       - offset: 2
         hash: "29987354"
         text: 止めるのに 3 秒だけ待つ。それを過ぎると開いている接続ごと打ち切る
-  github.com/mpyw/pkgsight/cmd/pkgsight.serveCallGraph:
-    summary: コールグラフを作り、結果をログに出す
-    doc: serveCallGraph はコールグラフを作り、どうだったかをログに出す。
-    fingerprint: 840955221b0c8c79
-    lines:
-      - offset: 8
-        hash: 576862c0
-        text: 型チェックに通らないパッケージは、関数ごとコールグラフから消える。黙って消えないよう、パッケージ名と理由をログに出す
-        kind: important
   github.com/mpyw/pkgsight/cmd/pkgsight.serveCommand:
     summary: pkgsight serve の定義とフラグ
     doc: serveCommand は pkgsight serve。
@@ -875,7 +950,7 @@ funcs:
     summary: コードが変わるたびに解析し直して、サーバーに渡す
     doc: serveWatching は、ctx が終わるまで、コードが変わるたびに解析し直し、結果を api に渡す。g は出発点のパッケージグラフ。
     body: 見張るのは、今のパッケージグラフにある自分のパッケージのディレクトリ。新しいパッケージを足すと、どこかのファイルがそれを import するので、その変更で読み直したときに見張る対象にも加わる。
-    fingerprint: f116ec3004330ed9
+    fingerprint: 9f784f2c8ebbef2a
     lines:
       - offset: 13
         hash: 04bbeda4
@@ -888,7 +963,7 @@ funcs:
     fingerprint: 0e1657d83c059de9
   github.com/mpyw/pkgsight/cmd/pkgsight.serveWatching$2:
     summary: 両方のグラフを作り直して、サーバーに渡す
-    fingerprint: 9025021328504d6e
+    fingerprint: 1e9c3ec3550d75f1
   github.com/mpyw/pkgsight/cmd/pkgsight.usageError:
     summary: 使い方の誤りを 1 回だけ報告し、終了コード 2 にする
     doc: usageError は、flag パッケージと同じく、誤ったコマンドラインを終了コード 2 で 1 回だけ報告する。urfave/cli はそれを表示したうえで、さらに返してもくる。
@@ -898,26 +973,35 @@ funcs:
     summary: パッケージを読み込み、コールグラフを作る入口
     doc: Build は dir で patterns を読み込み、そのコールグラフを作る。
     body: 依存パッケージはソースを読まず、型情報だけを読む（`packages.LoadSyntax`）。全部を読む方式はメモリが約 6 倍（cmd/go で 1.17 GB 対 180 MB）だったので採らなかった。その代わり依存パッケージを通る呼び出しが見えなくなるので、`build` の推測と `recordCallbacks` で補っている。用語はパッケージの注釈を参照。
-    fingerprint: 455b577b8623d179
+    fingerprint: 366feda324cadefa
     lines:
       - offset: 7
         hash: 576135d8
         text: ディレクトリがないと go コマンドが起動に失敗し、「go が見つからない」ような紛らわしいエラーになる。先に確かめる
         kind: warning
       - offset: 19
-        hash: 2c9a9380
+        hash: b61e68eb
         text: 型チェックに通らないパッケージは、関数ごとコールグラフから消える。黙って消えないよう、ここで記録して画面とログに出す
         kind: important
-      - offset: 23
+      - offset: 27
         hash: a6d6beeb
         text: 依存パッケージは型情報しかないので、命令に直す（SSA）のは自前のパッケージだけ。メモリを抑える要
-      - offset: 37
+      - offset: 41
         hash: 8ca2d1ed
         text: 値の流れを追って呼び出し先を絞る（VTA）。その前に作る「メソッドを持つ型すべて」の候補表（CHA）は、絞り込みの出発点にも、推測の元にも使う
   github.com/mpyw/pkgsight/internal/callgraph.boolCompare:
     summary: bool の大小を cmp.Compare と同じ形で返す
     body: '`build` の呼び出し順の比較で、`Maybe` を最後のタイブレークに使うため。'
     fingerprint: f5fc9d8f744d24a7
+  github.com/mpyw/pkgsight/internal/callgraph.brokenImport:
+    summary: 型チェックを妨げている import を名指しする
+    doc: brokenImport は、p の型チェックを妨げている import を示す。
+    body: SSA は、型チェックに通らないパッケージを import しているパッケージも、何段先であっても丸ごと外す。外したことを黙らないよう、直接の import のうち原因になっているものを名指しする。
+    fingerprint: a8ce42106e11ce03
+    lines:
+      - offset: 1
+        hash: 5b7b244d
+        text: 毎回同じ import を名指しするよう、パスの順に見る
   github.com/mpyw/pkgsight/internal/callgraph.callSites:
     summary: 関数本体のすべての呼び出し命令を集める
     body: VTA（値の流れから呼び出し先を絞る解析）の結果には、ライブラリ関数に関数を渡しただけの呼び出しが出てこない。そこで関数の命令を直接たどり、`recordCallbacks` で調べる。

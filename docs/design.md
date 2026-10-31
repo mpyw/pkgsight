@@ -32,6 +32,17 @@ An entry point is where a reader may start a call flow.
 
 `String` and `Error` never make an `interface` entry. Nearly every type has them. A function handed to a library as an argument, as with `http.HandleFunc`, is no entry: the call flow reaches it from the caller, through the library.
 
+## Export
+
+`pkgsight export` builds both graphs, then writes one HTML file. The built UI's script and style go in inline. The data goes in a `<script id="pkgsight-data" type="application/json">` element, and `web/src/data/embedded.ts` answers from it in place of the server.
+
+| Data | Comes from |
+| --- | --- |
+| Package graph, entries, functions, sources | The analysis, as the API would encode them |
+| Call status, notes, images | The API, asked in the same process with no network, so notes are placed and checked as `serve` does |
+
+Images that notes show are embedded as data URLs. Search runs in the browser, as the server runs it.
+
 ## Views
 
 | View | Shows |

@@ -64,6 +64,7 @@ mise run build
 | Command | |
 | --- | --- |
 | `pkgsight serve [packages]` | Open the module in the browser, and serve MCP for notes |
+| `pkgsight export [packages]` | Write the module, with its notes and its source, into one HTML file |
 | `pkgsight notes check [packages]` | List the notes whose code changed or is gone. Fails if there are any |
 | `pkgsight --version` | Print the version |
 | `pkgsight --help` | List the commands. `pkgsight <command> --help` lists a command's flags |
@@ -102,6 +103,24 @@ Double-click a package to see the functions inside it and the calls between them
 Start from the sidebar. It lists the `main` functions, and the functions a library calls, such as a command's action or `ServeHTTP`. You can also search for any function. Click a function to open its calls, and use the badge on its right edge to close them again.
 
 Some calls cannot be seen. Calls made inside dependencies and calls through reflection are missing. An interface call on a value from a dependency is a guess, drawn dotted.
+
+### pkgsight export
+
+Writes everything `pkgsight serve` shows into one HTML file, which opens in a browser without pkgsight:
+
+```bash
+pkgsight export -o pkgsight.html
+```
+
+| Flag | Default | |
+| --- | --- | --- |
+| `--dir`, `-C` | `.` | Directory to run in |
+| `--output`, `-o` | `pkgsight.html` | File to write |
+
+The file shows the notes as they are, and cannot write new ones.
+
+> [!CAUTION]
+> The file holds the source code of the module. Share it only with people who may read the code.
 
 ### pkgsight notes check
 
