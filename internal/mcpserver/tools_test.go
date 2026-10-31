@@ -167,7 +167,7 @@ func TestOverview(t *testing.T) {
 	if err := s.notes.Update("ja", func(b *notes.Book) { b.Packages[appPkg] = notes.Note{Summary: "x"} }); err != nil {
 		t.Fatal(err)
 	}
-	s.ok(t, "overview", nil, "Notes in ja: 1 packages, 0 functions")
+	s.ok(t, "overview", nil, "Notes in ja: 1 package, 0 functions")
 
 	s.calls = func() (*callgraph.Graph, error) { return nil, nil }
 	text := s.ok(t, "overview", nil, "Entry points: the call graph is still building")
@@ -200,7 +200,7 @@ func TestPackage(t *testing.T) {
 		"Translated doc comment:\n  訳",
 		"Body:\n  本文",
 		"Imported by: example.com/sample/cmd/sample",
-		"- Run\n  id: example.com/sample/app.Run, app/app.go:19-29, 3 calls into the module, 1 callers",
+		"- Run\n  id: example.com/sample/app.Run, app/app.go:19-29, 3 calls into the module, 1 caller",
 		"note: 表示する",
 	)
 
@@ -352,7 +352,7 @@ func TestDeleteNotes(t *testing.T) {
 	s := connect(t, sample)
 	s.ok(t, "write_package_note", map[string]any{"lang": "ja", "path": appPkg, "summary": "s"})
 	s.ok(t, "write_function_note", map[string]any{"lang": "ja", "id": run, "summary": "s"})
-	s.ok(t, "delete_notes", map[string]any{"lang": "ja", "packages": []string{appPkg, "gone"}, "functions": []string{"gone"}}, "Deleted 1 notes.")
+	s.ok(t, "delete_notes", map[string]any{"lang": "ja", "packages": []string{appPkg, "gone"}, "functions": []string{"gone"}}, "Deleted 1 note.")
 	s.ok(t, "write_package_note", map[string]any{"lang": "ja", "path": appPkg, "summary": "s"})
 	s.ok(t, "delete_notes", map[string]any{"lang": "ja", "all": true}, "Deleted 2 notes.")
 	if langs := s.notes.Langs(); len(langs) != 0 {
@@ -401,7 +401,7 @@ func TestWriteFunctionNoteMissingSource(t *testing.T) {
 func TestDeleteFunctionNotes(t *testing.T) {
 	s := connect(t, sample)
 	s.ok(t, "write_function_note", map[string]any{"lang": "ja", "id": run, "summary": "s"})
-	s.ok(t, "delete_notes", map[string]any{"lang": "ja", "functions": []string{run}}, "Deleted 1 notes.")
+	s.ok(t, "delete_notes", map[string]any{"lang": "ja", "functions": []string{run}}, "Deleted 1 note.")
 }
 
 func TestPackageWithoutImports(t *testing.T) {
@@ -437,10 +437,10 @@ func TestStaleNotes(t *testing.T) {
 		"- stale function example.com/sample/app.Run: read it again and rewrite its note",
 	)
 	s.ok(t, "function", map[string]any{"id": run, "lang": "ja"}, "Note (ja, stale: the code changed since it was written): s")
-	s.ok(t, "overview", nil, "Notes in ja: 1 packages, 2 functions, 2 stale or orphaned (see stale_notes)")
+	s.ok(t, "overview", nil, "Notes in ja: 1 package, 2 functions, 2 stale or orphaned (see stale_notes)")
 
 	s.calls = func() (*callgraph.Graph, error) { return nil, nil }
 	s.fails(t, "stale_notes", map[string]any{"lang": "ja"}, "still building")
-	// Without a call graph, a package note cannot be checked, so it says nothing.
-	s.ok(t, "package", map[string]any{"path": appPkg, "lang": "ja"}, "Note (ja): s")
+	// Without a call graph, a package note cannot be checked, and says so.
+	s.ok(t, "package", map[string]any{"path": appPkg, "lang": "ja"}, "Note (ja, not checked against the code yet: the call graph is still building): s")
 }

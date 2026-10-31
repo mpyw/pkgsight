@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 
 	"github.com/urfave/cli/v3"
 
@@ -17,7 +18,7 @@ import (
 
 // notesCommand is pkgsight notes, which holds the commands on notes.
 //
-//declscope:shared // newRootCommand in main.go holds it
+//declscope:shared // mainCommand in main.go holds it
 func notesCommand() *cli.Command {
 	return &cli.Command{
 		Name:         "notes",
@@ -44,14 +45,25 @@ func notesCommand() *cli.Command {
 // fails when there is any, so CI can require notes to keep up.
 func notesCheckAction(ctx context.Context, cmd *cli.Command) error {
 	out := cmd.Root().Writer
-	dir, pats := cmd.String("dir"), patterns(cmd)
-	g, err := load.Graph(ctx, dir, pats...)
+	dir := cmd.String("dir")
+	// Check against the whole module, so a note of a package outside the
+	// patterns is not taken for an orphan. The patterns only choose which
+	// notes to report.
+	g, err := load.Graph(ctx, dir, "./...")
 	if err != nil {
 		return err
 	}
-	calls, err := callgraph.Build(ctx, dir, pats...)
+	calls, err := callgraph.Build(ctx, dir, "./...")
 	if err != nil {
 		return err
+	}
+	inScope := func(string) bool { return true }
+	if cmd.Args().Present() {
+		paths, err := load.Packages(ctx, dir, patterns(cmd)...)
+		if err != nil {
+			return err
+		}
+		inScope = func(path string) bool { return slices.Contains(paths, path) }
 	}
 	store, err := notes.Open(g.Root)
 	if err != nil {
@@ -65,6 +77,13 @@ func notesCheckAction(ctx context.Context, cmd *cli.Command) error {
 	bad := 0
 	for _, lang := range langs {
 		for _, p := range code.Check(store.Book(lang)).Problems() {
+			pkg := p.Key
+			if p.Kind == "function" {
+				pkg = freshness.PackageOf(p.Key)
+			}
+			if !inScope(pkg) {
+				continue
+			}
 			logf(out, "%s: %s %s %s\n", lang, p.State, p.Kind, p.Key)
 			bad++
 		}

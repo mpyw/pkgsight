@@ -202,7 +202,7 @@ func (s *tools) overview(overviewIn) (string, error) {
 	g, _ := s.Calls()
 	for _, l := range langs {
 		book := s.Notes.Book(l)
-		fmt.Fprintf(&b, "Notes in %s: %d packages, %d functions", l, len(book.Packages), len(book.Funcs))
+		fmt.Fprintf(&b, "Notes in %s: %s, %s", l, count(len(book.Packages), "package"), count(len(book.Funcs), "function"))
 		if g != nil {
 			if n := len(s.code(g).Check(book).Problems()); n > 0 {
 				fmt.Fprintf(&b, ", %d stale or orphaned (see stale_notes)", n)
@@ -217,7 +217,7 @@ func (s *tools) overview(overviewIn) (string, error) {
 		}
 		fmt.Fprintf(&b, "- %s (package %s)", p.Path, p.Name)
 		if g != nil {
-			fmt.Fprintf(&b, ", %d functions", len(g.Package(p.Path)))
+			fmt.Fprintf(&b, ", %s", count(len(g.Package(p.Path)), "function"))
 		}
 		b.WriteString("\n")
 		if p.Doc != "" {
@@ -288,7 +288,7 @@ func (s *tools) packageInfo(in packageIn) (string, error) {
 				own++
 			}
 		}
-		fmt.Fprintf(&b, "- %s\n  id: %s, %s:%d-%d, %d calls into the module, %d callers\n", f.Name, f.ID, f.File, f.Line, f.EndLine, own, len(f.Callers))
+		fmt.Fprintf(&b, "- %s\n  id: %s, %s:%d-%d, %s into the module, %s\n", f.Name, f.ID, f.File, f.Line, f.EndLine, count(own, "call"), count(len(f.Callers), "caller"))
 		if f.Doc != "" {
 			fmt.Fprintf(&b, "  doc: %s\n", f.Doc)
 		}
@@ -490,7 +490,7 @@ func (s *tools) writeFunctionNote(in functionNoteIn) (string, error) {
 	if err := s.Notes.Update(in.Lang, func(b *notes.Book) { b.Funcs[in.ID] = n }); err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("Saved the note of %s with %d line notes.", d.Name, len(n.Lines)), nil
+	return fmt.Sprintf("Saved the note of %s with %s.", d.Name, count(len(n.Lines), "line note")), nil
 }
 
 type staleIn struct {
@@ -550,13 +550,18 @@ func (s *tools) deleteNotes(in deleteIn) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("Deleted %d notes.", removed), nil
+	return fmt.Sprintf("Deleted %s.", count(removed, "note")), nil
 }
 
+// writeNote writes n. An empty state is one not known yet, while the call
+// graph is building.
 func writeNote(b *strings.Builder, lang string, n notes.Note, state freshness.State) {
-	if state == freshness.Stale {
+	switch state {
+	case freshness.Stale:
 		fmt.Fprintf(b, "Note (%s, stale: the code changed since it was written): %s\n", lang, n.Summary)
-	} else {
+	case "":
+		fmt.Fprintf(b, "Note (%s, not checked against the code yet: the call graph is still building): %s\n", lang, n.Summary)
+	default:
 		fmt.Fprintf(b, "Note (%s): %s\n", lang, n.Summary)
 	}
 	if n.Doc != "" {
@@ -565,6 +570,14 @@ func writeNote(b *strings.Builder, lang string, n notes.Note, state freshness.St
 	if n.Body != "" {
 		fmt.Fprintf(b, "Body:\n%s\n", indentText(n.Body))
 	}
+}
+
+// count writes n with the noun, in the plural unless n is 1.
+func count(n int, noun string) string {
+	if n == 1 {
+		return "1 " + noun
+	}
+	return fmt.Sprintf("%d %ss", n, noun)
 }
 
 func indentText(s string) string {

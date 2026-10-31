@@ -69,6 +69,17 @@ func TestNotesCheck(t *testing.T) {
 	if code, out, _ := check("--lang", "ja"); code != 0 || out != "Every note matches the code.\n" {
 		t.Errorf("only ja: exit %d, %q", code, out)
 	}
+	// Patterns choose which notes to report. The orphan lives in app, which
+	// ./cmd/... does not cover, and it is not taken for an orphan of cmd.
+	if code, out, _ := check("./cmd/..."); code != 0 || out != "Every note matches the code.\n" {
+		t.Errorf("only cmd: exit %d, %q", code, out)
+	}
+	if code, out, _ := check("./app"); code != 1 || out != "en: orphan function example.com/sample/app.Gone\n" {
+		t.Errorf("only app: exit %d, %q", code, out)
+	}
+	if code, _, _ := check("example.com/nope"); code != 1 {
+		t.Errorf("a bad pattern: exit %d", code)
+	}
 }
 
 func TestNotesCheckFailures(t *testing.T) {

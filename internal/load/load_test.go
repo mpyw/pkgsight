@@ -83,3 +83,17 @@ func equal(a, b []string) bool {
 	}
 	return true
 }
+
+func TestPackages(t *testing.T) {
+	got, err := Packages(context.Background(), "testdata/sample", "./app/...")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Only what the pattern matches, not what it imports.
+	if want := []string{"example.com/sample/app", "example.com/sample/app/store"}; !equal(got, want) {
+		t.Errorf("Packages = %v, want %v", got, want)
+	}
+	if _, err := Packages(context.Background(), "testdata/sample", "example.com/nope"); err == nil || !strings.Contains(err.Error(), "go list") {
+		t.Errorf("err = %v", err)
+	}
+}

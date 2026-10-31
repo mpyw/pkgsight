@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/mpyw/pkgsight/internal/model"
 )
@@ -65,6 +66,21 @@ func Graph(ctx context.Context, dir string, patterns ...string) (*model.Graph, e
 		return nil, fmt.Errorf("go list: %w: %s", err, bytes.TrimSpace(stderr.Bytes()))
 	}
 	return decode(root, out)
+}
+
+// Packages lists the import paths that patterns match in dir, without
+// their dependencies. A pattern that names no package is an error.
+func Packages(ctx context.Context, dir string, patterns ...string) ([]string, error) {
+	args := append([]string{"list", "-f", "{{.ImportPath}}"}, patterns...)
+	cmd := exec.CommandContext(ctx, "go", args...)
+	cmd.Dir = dir
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("go list: %w: %s", err, bytes.TrimSpace(stderr.Bytes()))
+	}
+	return strings.Fields(string(out)), nil
 }
 
 func decode(root string, out []byte) (*model.Graph, error) {

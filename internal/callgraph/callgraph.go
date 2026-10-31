@@ -358,7 +358,18 @@ func (g *Graph) Func(id string) (model.FuncDetail, bool) {
 	if !ok {
 		return model.FuncDetail{}, false
 	}
-	return *d, true
+	return detailCopy(d), true
+}
+
+// detailCopy copies d with its slices, so a caller cannot change the graph.
+func detailCopy(d *model.FuncDetail) model.FuncDetail {
+	out := *d
+	out.Calls = slices.Clone(d.Calls)
+	out.Callers = slices.Clone(d.Callers)
+	for i := range out.Calls {
+		out.Calls[i].Lines = slices.Clone(d.Calls[i].Lines)
+	}
+	return out
 }
 
 // Package returns the functions of the package at path in source order,
@@ -366,7 +377,7 @@ func (g *Graph) Func(id string) (model.FuncDetail, bool) {
 func (g *Graph) Package(path string) []model.FuncDetail {
 	out := make([]model.FuncDetail, 0, len(g.byPkg[path]))
 	for _, id := range g.byPkg[path] {
-		out = append(out, *g.funcs[id])
+		out = append(out, detailCopy(g.funcs[id]))
 	}
 	return out
 }
@@ -381,8 +392,8 @@ func (g *Graph) Entries() []model.Entry {
 	return g.entries
 }
 
-// Search returns up to limit own functions whose name or package contains q,
-// ignoring case, the shortest names first.
+// Search returns up to limit own functions whose "pkgname.Name", such as
+// "server.New", contains q, ignoring case, the shortest names first.
 func (g *Graph) Search(q string, limit int) []model.Func {
 	q = strings.ToLower(q)
 	var hits []model.Func

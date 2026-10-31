@@ -16,6 +16,12 @@ import (
 
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	// After the first interrupt, the next ends pkgsight at once, as a stuck
+	// shutdown would otherwise wait out its timeout.
+	go func() {
+		<-ctx.Done()
+		stop()
+	}()
 	code := runMain(ctx, os.Args, os.Stdout, os.Stderr)
 	stop()
 	os.Exit(code)
@@ -49,7 +55,7 @@ func mainCommand(stdout, stderr io.Writer) *cli.Command {
 		Version:   currentVersion(),
 		Writer:    stdout,
 		ErrWriter: stderr,
-		// run prints errors and picks the exit status; urfave/cli must not.
+		// runMain prints errors and picks the exit status; urfave/cli must not.
 		ExitErrHandler:  func(context.Context, *cli.Command, error) {},
 		HideHelpCommand: true,
 		Suggest:         true,

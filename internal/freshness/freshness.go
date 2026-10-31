@@ -11,6 +11,7 @@ package freshness
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"go/parser"
 	"go/scanner"
 	"go/token"
@@ -70,7 +71,11 @@ func (c *Code) FuncPrint(fn model.Func) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	// The file may have shrunk since the call graph was built.
 	from, to := max(fn.Line, 1), min(fn.EndLine, len(lines))
+	if from > to {
+		return "", fmt.Errorf("%s has no lines %d-%d any more", fn.File, fn.Line, fn.EndLine)
+	}
 	return tokenPrint(strings.Join(lines[from-1:to], "\n")), nil
 }
 
@@ -170,6 +175,21 @@ func (c *Code) ownPackage(path string) (model.Package, bool) {
 		}
 	}
 	return model.Package{}, false
+}
+
+// PackageOf returns the import path of the package a function ID belongs
+// to, as SSA spells IDs: "path.F", "path.F$1", "(path.T).M" or "(*path.T).M".
+func PackageOf(id string) string {
+	if rest, ok := strings.CutPrefix(id, "("); ok {
+		id, _, _ = strings.Cut(strings.TrimPrefix(rest, "*"), ")")
+	}
+	// The name starts after the last dot that follows the last slash, since
+	// the path itself may have dots, as in github.com.
+	slash := strings.LastIndex(id, "/")
+	if dot := strings.Index(id[slash+1:], "."); dot >= 0 {
+		return id[:slash+1+dot]
+	}
+	return id
 }
 
 // Problem is a note that is not fresh.

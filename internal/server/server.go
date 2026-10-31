@@ -106,8 +106,11 @@ func (s *Server) routes(version string) *http.ServeMux {
 	}))
 	mux.HandleFunc("GET /api/calls/search", s.withCalls(func(g *callgraph.Graph, r *http.Request) (any, int) {
 		limit, err := strconv.Atoi(r.URL.Query().Get("limit"))
-		if err != nil || limit <= 0 || limit > 200 {
+		switch {
+		case err != nil || limit <= 0:
 			limit = 50
+		case limit > 200:
+			limit = 200
 		}
 		return g.Search(r.URL.Query().Get("q"), limit), http.StatusOK
 	}))

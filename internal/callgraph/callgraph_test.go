@@ -243,3 +243,24 @@ func TestSearch(t *testing.T) {
 		t.Error("Func(nope) found something")
 	}
 }
+
+func TestResultsAreCopies(t *testing.T) {
+	g, err := callgraph.Build(context.Background(), "testdata/sample", "./...")
+	if err != nil {
+		t.Fatal(err)
+	}
+	const id = "example.com/sample/app.Run"
+	d, _ := g.Func(id)
+	d.Calls[0].Lines[0] = -1
+	d.Calls[0] = model.Call{}
+	d.Callers[0] = model.Func{}
+	for _, f := range g.Package("example.com/sample/app") {
+		if f.ID == id && len(f.Calls) > 0 {
+			f.Calls[0].To.Name = "changed"
+		}
+	}
+	again, _ := g.Func(id)
+	if again.Calls[0].To.Name != "cleanup" || again.Calls[0].Lines[0] != 21 || again.Callers[0].Name != "main" {
+		t.Errorf("changing a result changed the graph: %+v", again)
+	}
+}

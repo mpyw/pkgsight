@@ -21,7 +21,7 @@ import (
 
 // serveCommand is pkgsight serve.
 //
-//declscope:shared // newRootCommand in main.go holds it
+//declscope:shared // mainCommand in main.go holds it
 func serveCommand() *cli.Command {
 	return &cli.Command{
 		Name:      "serve",

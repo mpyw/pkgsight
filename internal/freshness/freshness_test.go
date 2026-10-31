@@ -201,3 +201,36 @@ func TestLinesAreKept(t *testing.T) {
 		t.Errorf("read the file %d times", reads)
 	}
 }
+
+func TestPackageOf(t *testing.T) {
+	for id, want := range map[string]string{
+		"github.com/mpyw/pkgsight/cmd/pkgsight.main":              "github.com/mpyw/pkgsight/cmd/pkgsight",
+		"example.com/sample/app.Run$1":                            "example.com/sample/app",
+		"(example.com/sample/app.english).Greet":                  "example.com/sample/app",
+		"(*github.com/mpyw/pkgsight/internal/notes.Store).Update": "github.com/mpyw/pkgsight/internal/notes",
+		"(*example.com/x.List[T]).Push":                           "example.com/x",
+		"main.main":                                               "main",
+		"nodot":                                                   "nodot",
+	} {
+		if got := freshness.PackageOf(id); got != want {
+			t.Errorf("PackageOf(%q) = %q, want %q", id, got, want)
+		}
+	}
+}
+
+func TestShrunkFileIsStale(t *testing.T) {
+	dir := sample(t)
+	b := book(t, dir)
+	c, _ := code(t, dir)
+	// The file loses its lines after the call graph was built.
+	if err := os.WriteFile(filepath.Join(dir, "app", "app.go"), []byte("package app\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	c2 := freshness.New(nil, nil, func(file string) ([]byte, error) { return os.ReadFile(filepath.Join(dir, file)) })
+	if _, err := c2.FuncPrint(model.Func{File: "app/app.go", Line: 19, EndLine: 29}); err == nil || !strings.Contains(err.Error(), "no lines 19-29") {
+		t.Errorf("err = %v", err)
+	}
+	if got := c.Check(b).Funcs[run]; got != freshness.Stale {
+		t.Errorf("state = %s, want stale", got)
+	}
+}
