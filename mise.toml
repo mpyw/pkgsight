@@ -28,6 +28,7 @@ run = [
   'go test ./...',
   'declscope shrink ./...',
   'declscope ./...',
+  'go run ./cmd/pkgsight notes check',
   'pnpm --dir web lint',
   'pnpm --dir web test',
 ]

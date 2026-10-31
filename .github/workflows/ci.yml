@@ -114,6 +114,11 @@ jobs:
       - name: Run declscope
         run: declscope ./...
 
+      # The repository carries notes on its own code. A change to a function
+      # turns its note stale, and this fails until the note is rewritten.
+      - name: Check the notes match the code
+        run: go run ./cmd/pkgsight notes check
+
   release-build:
     name: Release build
     runs-on: ubuntu-latest

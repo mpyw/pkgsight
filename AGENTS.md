@@ -80,6 +80,7 @@ Use `encoding/json/v2`, never v1.
 - CI uploads coverage to Codecov under two flags, `go` and `ts`. Keep both near 100%. A branch no test can reach is a sign to remove it, not to skip it.
 - This repository runs declscope with `qualify: ondemand` and `exported: true`. Read `.agents/skills/declscope-authoring/SKILL.md` before writing Go here. `internal/server/server.go` and `internal/mcpserver/tools.go` are core files.
 - Run `declscope shrink` before declscope. A name that shrink unexports must then carry its file's namespace.
+- `.pkgsight/notes/ja.json` holds Japanese notes on this repository's own code. CI runs `pkgsight notes check`, which fails once a change turns a note stale. After changing a function, run `pkgsight serve`, connect over MCP, and rewrite the stale notes with the `refresh_notes` prompt. Write a note for each new function too. A note says what the code does now and why, never what it used to do.
 - The UI uses TypeScript 7 (`tsc -b`), oxlint rather than ESLint, prettier and pnpm.
 - `.claude` and `CLAUDE.md` are symbolic links to `.agents` and this file.
 
