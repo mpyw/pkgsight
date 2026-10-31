@@ -71,9 +71,9 @@ The browser opens on the package map. The call flow is ready a few seconds later
 
 | Flag | Default | |
 | --- | --- | --- |
-| `-C` | `.` | Directory to run in |
-| `-addr` | `localhost:7878` | Address to listen on |
-| `-open` | `true` | Open the browser |
+| `--dir`, `-C` | `.` | Directory to run in |
+| `--addr` | `localhost:7878` | Address to listen on |
+| `--open` | `true` | Open the browser |
 
 Arguments are package patterns, `./...` by default. The URL holds what is on screen, so you can share a view by its link.
 
@@ -107,7 +107,19 @@ Then ask, for example: *"Explain the flow from main in Japanese."* The notes app
 /mcp__pkgsight__explain_module ja
 ```
 
-Notes are saved in `.pkgsight/notes/<lang>.json`, one file per language. Commit them, and everyone who runs pkgsight on the repository sees them. A note stays on its line when code around it changes, and is marked when the line itself does.
+Notes are saved in `.pkgsight/notes/<lang>.json`, one file per language. Commit them, and everyone who runs pkgsight on the repository sees them.
+
+A note remembers the code it was written for. When that code changes, the note is marked as written for an older version. Ask Claude to bring the notes up to date:
+
+```text
+/mcp__pkgsight__refresh_notes ja
+```
+
+To fail CI while any note is out of date:
+
+```bash
+pkgsight notes check
+```
 
 ## Contributing
 

@@ -35,19 +35,31 @@ jobs:
       - name: Run Go tests with coverage
         run: go test -race -coverpkg=./... -coverprofile=coverage.txt ./...
 
-      - name: Run web tests
+      - name: Run web tests with coverage
         run: |
           pnpm --dir web install --frozen-lockfile
-          pnpm --dir web test
+          pnpm --dir web test:coverage
 
+      # Go and TypeScript upload apart, under flags of their own, so each
+      # keeps its own number on Codecov.
+      #
       # continue-on-error: Codecov being unreachable is not a reason to fail a
       # pull request. The other jobs say whether the code is good.
-      - name: Upload coverage to Codecov
+      - name: Upload Go coverage to Codecov
         uses: codecov/codecov-action@v7
         with:
           files: ./coverage.txt
-          flags: unittests
-          name: codecov
+          flags: go
+          name: go
+          use_oidc: true
+        continue-on-error: true
+
+      - name: Upload TypeScript coverage to Codecov
+        uses: codecov/codecov-action@v7
+        with:
+          files: ./web/coverage/lcov.info
+          flags: ts
+          name: ts
           use_oidc: true
         continue-on-error: true
 

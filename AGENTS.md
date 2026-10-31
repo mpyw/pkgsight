@@ -6,10 +6,11 @@ pkgsight draws a Go module in the browser: a package map, the functions inside a
 
 | Path | Role |
 | --- | --- |
-| `cmd/pkgsight` | The `serve` command. It loads the package graph, then builds the call graph in the background |
+| `cmd/pkgsight` | The commands, on urfave/cli v3. `main.go` assembles them, and each command has a file of its own |
 | `internal/load` | The package graph, from `go list -json` |
 | `internal/callgraph` | The call graph, from SSA with VTA, and the queries the API serves |
 | `internal/notes` | The notes store: one JSON file per language, and the placement of line notes |
+| `internal/freshness` | The fingerprint of a function or a package, and whether each note still matches its code |
 | `internal/server` | The HTTP API, the notes stream, image serving and the embedded UI |
 | `internal/mcpserver` | The MCP tools and prompts |
 | `internal/model` | The JSON shapes shared with the UI. `web/src/data/types.ts` mirrors them |
@@ -51,6 +52,9 @@ Use `encoding/json/v2`, never v1.
 ### Notes
 
 - A function ID is the key of its notes. A change to `builder.id` orphans every stored note, so treat it as a change of the file format.
+- So is a change to how `internal/freshness` hashes code: every note would turn stale at once.
+- A guess from CHA is listed among the caller's calls, but does not make the callee list the caller. Otherwise every type with a `Write` or an `Error` method would list every caller of the interface.
+- A write edits a copy of the book, and stores it only once the file is written. A failed write must leave the store as the file has it.
 - A line note stores its offset from the `func` keyword and a hash of the trimmed line, never a line number. Doc comment lines get negative offsets. `notes.Place` puts it back on the nearest line with the same hash, or marks it stale.
 - A language tag names a file, so `validLang` must accept only BCP 47 shapes. Writes go through a temporary file and a rename, and the file is `0644` for the team.
 
@@ -72,6 +76,8 @@ Use `encoding/json/v2`, never v1.
 
 - `mise run check` runs everything CI would: golangci-lint, `go test`, `declscope shrink`, declscope, then the UI's type check, oxlint, prettier and vitest.
 - `mise run build` builds the UI and the binary. The Go tests do not need the built UI.
+- The Go tests analyze small modules in `internal/callgraph/testdata`: `sample` for the common shapes, `edges` for generics, guesses, wrappers and callbacks, and `broken` for a package that does not type-check.
+- CI uploads coverage to Codecov under two flags, `go` and `ts`. Keep both near 100%. A branch no test can reach is a sign to remove it, not to skip it.
 - This repository runs declscope with `qualify: ondemand` and `exported: true`. Read `.agents/skills/declscope-authoring/SKILL.md` before writing Go here. `internal/server/server.go` and `internal/mcpserver/tools.go` are core files.
 - Run `declscope shrink` before declscope. A name that shrink unexports must then carry its file's namespace.
 - The UI uses TypeScript 7 (`tsc -b`), oxlint rather than ESLint, prettier and pnpm.
@@ -83,4 +89,4 @@ Use `encoding/json/v2`, never v1.
 - The before hooks of `.goreleaser.yaml` build the web UI, so every binary embeds it. `go install` cannot, so the README sends users to mise or the release archives.
 - Bump every version string in the README in one commit before tagging. `.github/scripts/check-version.sh` lists them. CI checks that they agree, and the Tag workflow checks that they equal the tag.
 - GoReleaser is pinned to 2.17.1. 2.18.0 attests every artifact, which fails the job in declscope, a sibling project.
-- `main.version` is set at link time. `pkgsight version` prints it, and MCP reports it.
+- `main.version` is set at link time. `pkgsight --version` prints it, and MCP reports it.

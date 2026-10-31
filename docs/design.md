@@ -17,7 +17,7 @@ The call graph comes from SSA of the module's own packages. Dependencies are loa
 | Made inside a dependency | No |
 | Through reflection | No |
 
-A function handed to `sync.WaitGroup.Go` or `errgroup.Group.Go` is a `go` call. A call the compiler wrote, such as the yield of a range over a function, has no line.
+A function handed to `sync.WaitGroup.Go` or `errgroup.Group.Go` is a `go` call. A guess is listed among the caller's calls, but the callee does not list the caller. Otherwise every type with a `Write` or an `Error` method would list every caller of the interface. A call the compiler wrote, such as the yield of a range over a function, has no line.
 
 An entry point is a `main` function, or an exported function that nothing in the module calls. A function that only a library calls, such as an HTTP handler, is not one.
 
@@ -56,6 +56,16 @@ Notes live in `.pkgsight/notes/<lang>.json` under the directory pkgsight runs in
 
 `doc`, `body` and line notes are GitHub Flavored Markdown with HTML, sanitized. Alerts such as `> [!WARNING]` render as on GitHub. Go code blocks are highlighted like the source. A relative image path is resolved from the directory pkgsight runs in, and served by `/api/asset`.
 
+A note keeps a `fingerprint` of the code it was written for. A function's is a hash of its tokens, from the `func` keyword to the end. Comments, blank lines and layout do not count. A package's is a hash of its doc comment and the sorted names of its functions. `internal/freshness` computes both, and tells each note's state.
+
+| State | Meaning | Shown |
+| --- | --- | --- |
+| Fresh | The fingerprint matches the code | As is |
+| Stale | The code changed, or the note has no fingerprint | Dimmed, with ⚠ and a warning in the panel |
+| Orphan | The package or function is gone or renamed | Nowhere. `stale_notes` and `notes check` list it |
+
+`pkgsight notes check` lists the notes that are not fresh, one per line, and exits with status 1 when there is any.
+
 A line note may take a `kind`, drawn as a GitHub alert.
 
 | Kind | For |
@@ -80,6 +90,7 @@ A line note is stored by its offset from the `func` keyword and a hash of the tr
 | `search` | Finds functions by name |
 | `write_package_note` | Replaces the note of a package |
 | `write_function_note` | Replaces the note of a function, with its line notes |
+| `stale_notes` | Lists the notes of one language that are stale or orphaned |
 | `delete_notes` | Deletes notes of one language |
 
 | Prompt | Arguments | Writes notes for |
@@ -87,6 +98,7 @@ A line note is stored by its offset from the `func` keyword and a hash of the tr
 | `explain_module` | `lang` | Every package, and the entry points |
 | `explain_package` | `package`, `lang` | A package and its functions |
 | `explain_flow` | `function`, `lang`, `depth` | The functions along the call flow from a function |
+| `refresh_notes` | `lang` | The stale notes, rewritten. Orphaned notes are deleted |
 
 The server instructions in `internal/mcpserver/tools.go` tell the model how to write each part. Cross-origin browser requests to `/mcp` are refused.
 
@@ -95,12 +107,12 @@ The server instructions in `internal/mcpserver/tools.go` tell the model how to w
 | Endpoint | Returns |
 | --- | --- |
 | `GET /api/graph` | The package graph |
-| `GET /api/calls/status` | Whether the call graph is pending, ready or failed |
+| `GET /api/calls/status` | Whether the call graph is pending, ready or failed, and the packages left out because they do not type-check |
 | `GET /api/calls/entries` | The entry points |
 | `GET /api/calls/func?id=` | A function with its calls and callers |
 | `GET /api/calls/package?path=` | The functions of a package, in source order |
 | `GET /api/calls/search?q=` | Functions whose name matches |
 | `GET /api/source?file=` | A source file of the module's own packages |
 | `GET /api/asset?path=` | An image file under the root |
-| `GET /api/notes?lang=` | The notes of a language, with line notes placed |
+| `GET /api/notes?lang=` | The notes of a language, with line notes placed and each note's `stale` flag |
 | `GET /api/notes/events` | A server-sent event each time a book of notes changes |

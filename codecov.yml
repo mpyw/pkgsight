@@ -1,2 +1,15 @@
 codecov:
   require_ci_to_pass: true
+
+# Go and TypeScript are uploaded apart, and each flag covers its own files.
+flags:
+  go:
+    paths:
+      - cmd/
+      - internal/
+      - web/embed.go
+    carryforward: true
+  ts:
+    paths:
+      - web/src/
+    carryforward: true
