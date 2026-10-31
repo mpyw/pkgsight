@@ -1,6 +1,6 @@
 # Repository instructions
 
-pkgsight draws a Go module in the browser: a package map, the functions inside a package, and call flows. An assistant can write notes over MCP, and the browser shows them next to the code. Read [the README](README.md) for the user-facing contract. This file records how the code is laid out, and the decisions that are easy to undo by accident.
+pkgsight draws a Go module in the browser: a package map, the functions inside a package, and call flows. An assistant can write notes over MCP, and the browser shows them next to the code. Read [the design document](docs/design.md) for how the analysis, the views, notes and MCP work. This file records how the code is laid out, and the decisions that are easy to undo by accident. [The README](README.md) is for users only. Keep it to what a person needs to install and use pkgsight, and put anything for agents or contributors here or in the design document.
 
 ## Layout
 

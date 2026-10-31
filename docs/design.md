@@ -1,0 +1,106 @@
+# Design
+
+How pkgsight analyzes a module, what it shows, and how notes and MCP work. [AGENTS.md](../AGENTS.md) holds the decisions behind this and the rules for changing it. The README covers only what a user needs.
+
+## Analysis
+
+`pkgsight serve` loads the package graph with `go list` first, so the map shows at once. The call graph is built after it, in the background.
+
+The call graph comes from SSA of the module's own packages. Dependencies are loaded for their types only. VTA resolves calls, and CHA fills in what VTA cannot see.
+
+| Call | Shown |
+| --- | --- |
+| To a function or method of the module | Yes |
+| Through an interface, the value made in the module | Yes, to each type it can hold |
+| Through an interface, the value from a dependency | As a guess (`Maybe`), drawn dotted |
+| A function of the module handed to a library function | Yes, with `Through` naming the library function |
+| Made inside a dependency | No |
+| Through reflection | No |
+
+A function handed to `sync.WaitGroup.Go` or `errgroup.Group.Go` is a `go` call. A call the compiler wrote, such as the yield of a range over a function, has no line.
+
+An entry point is a `main` function, or an exported function that nothing in the module calls. A function that only a library calls, such as an HTTP handler, is not one.
+
+## Views
+
+| View | Shows |
+| --- | --- |
+| Package map | Packages by directory, with import edges. Folded directories open on a click |
+| Inside a package | Its functions, with methods boxed by receiver type, and the calls between them. Callers from other packages sit on the left, callees on the right. Closures fold into their function unless **Closures** is on |
+| Call flow | A tree of calls from one function. A function appears once per path that reaches it. Recursion stops at a function already on the path |
+
+Edges in the call flow and inside a package:
+
+| Call | Edge | Tag |
+| --- | --- | --- |
+| Plain | Solid gray | |
+| `go` | Green | `go` |
+| `defer` | Dashed amber | `defer` |
+| Through an interface | Purple | `iface` |
+| Through a function value | Dotted purple | `func value` |
+| Handed to a library function | Dotted purple | `via <function>` |
+| A guess | Dotted gray | `iface?` |
+
+The URL fragment holds the view: `#view=flow&fn=<id>`, `#view=inside&pkg=<path>`, or `#pkg=<path>` on the map.
+
+## Notes
+
+Notes live in `.pkgsight/notes/<lang>.json` under the directory pkgsight runs in, one file per BCP 47 language tag. The UI shows one language at a time, chosen in the toolbar. It starts with the browser's language when there are notes in it.
+
+| Part | Of | Shown |
+| --- | --- | --- |
+| `summary` | A package or a function | Under its name on the map, inside a package and in the call flow. Plain text |
+| `doc` | A package or a function | In place of the doc comment, with the original below |
+| `body` | A package or a function | In the panel |
+| `lines` | A function | Above a line of the function or its doc comment, without a line number |
+
+`doc`, `body` and line notes are GitHub Flavored Markdown with HTML, sanitized. Alerts such as `> [!WARNING]` render as on GitHub. Go code blocks are highlighted like the source. A relative image path is resolved from the directory pkgsight runs in, and served by `/api/asset`.
+
+A line note may take a `kind`, drawn as a GitHub alert.
+
+| Kind | For |
+| --- | --- |
+| `note` | Background to know while reading the line |
+| `tip` | A better way to use or change the code |
+| `important` | What a reader must grasp to understand the function |
+| `warning` | Something that breaks easily or surprises |
+| `caution` | A real risk, such as data loss, a race or a security hole |
+
+A line note is stored by its offset from the `func` keyword and a hash of the trimmed line. `notes.Place` puts it on the line at that offset when the hash matches. Otherwise it goes to the nearest line in the function with the same hash. Failing that, it stays at its offset, marked stale.
+
+## MCP
+
+`/mcp` serves MCP over streamable HTTP. The tools answer in plain text.
+
+| Tool | Does |
+| --- | --- |
+| `overview` | Lists the packages, their imports, the entry points and the languages with notes |
+| `package` | Describes a package: its doc comment, imports, importers, files and functions |
+| `function` | Shows a function: its source with line numbers and line notes, its calls and its callers |
+| `search` | Finds functions by name |
+| `write_package_note` | Replaces the note of a package |
+| `write_function_note` | Replaces the note of a function, with its line notes |
+| `delete_notes` | Deletes notes of one language |
+
+| Prompt | Arguments | Writes notes for |
+| --- | --- | --- |
+| `explain_module` | `lang` | Every package, and the entry points |
+| `explain_package` | `package`, `lang` | A package and its functions |
+| `explain_flow` | `function`, `lang`, `depth` | The functions along the call flow from a function |
+
+The server instructions in `internal/mcpserver/tools.go` tell the model how to write each part. Cross-origin browser requests to `/mcp` are refused.
+
+## HTTP API
+
+| Endpoint | Returns |
+| --- | --- |
+| `GET /api/graph` | The package graph |
+| `GET /api/calls/status` | Whether the call graph is pending, ready or failed |
+| `GET /api/calls/entries` | The entry points |
+| `GET /api/calls/func?id=` | A function with its calls and callers |
+| `GET /api/calls/package?path=` | The functions of a package, in source order |
+| `GET /api/calls/search?q=` | Functions whose name matches |
+| `GET /api/source?file=` | A source file of the module's own packages |
+| `GET /api/asset?path=` | An image file under the root |
+| `GET /api/notes?lang=` | The notes of a language, with line notes placed |
+| `GET /api/notes/events` | A server-sent event each time a book of notes changes |
