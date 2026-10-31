@@ -15,6 +15,7 @@ import (
 	"go/doc"
 	"go/token"
 	"go/types"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -57,11 +58,15 @@ func Build(ctx context.Context, dir string, patterns ...string) (*Graph, error) 
 		return nil, err
 	}
 	// SSA leaves out a package that does not type-check, and every function
-	// in it. Say which, so the gap is not silent.
+	// in it. It leaves out every package that imports one too, through any
+	// number of imports. Say which, so the gap is not silent.
 	var skipped []model.SkippedPackage
 	for _, p := range pkgs {
-		if len(p.Errors) > 0 {
+		switch {
+		case len(p.Errors) > 0:
 			skipped = append(skipped, model.SkippedPackage{Path: p.PkgPath, Error: p.Errors[0].Error()})
+		case p.IllTyped:
+			skipped = append(skipped, model.SkippedPackage{Path: p.PkgPath, Error: brokenImport(p)})
 		}
 	}
 	prog, _ := ssautil.Packages(pkgs, 0)
@@ -481,6 +486,17 @@ func (g *Graph) Package(path string) []model.FuncDetail {
 		out = append(out, detailCopy(g.funcs[id]))
 	}
 	return out
+}
+
+// brokenImport says which import of p keeps it from type-checking.
+func brokenImport(p *packages.Package) string {
+	paths := slices.Sorted(maps.Keys(p.Imports))
+	for _, path := range paths {
+		if imp := p.Imports[path]; imp.IllTyped || len(imp.Errors) > 0 {
+			return fmt.Sprintf("imports %s, which does not type-check", path)
+		}
+	}
+	return "a package it imports does not type-check"
 }
 
 // Skipped returns the packages left out because they do not type-check.

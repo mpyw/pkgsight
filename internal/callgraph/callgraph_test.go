@@ -205,11 +205,17 @@ func TestSkipsPackagesThatDoNotTypeCheck(t *testing.T) {
 		t.Fatal(err)
 	}
 	skipped := g.Skipped()
-	if len(skipped) != 1 || skipped[0].Path != "example.com/broken" || !strings.Contains(skipped[0].Error, "cannot use") {
+	if len(skipped) != 2 || skipped[0].Path != "example.com/broken" || !strings.Contains(skipped[0].Error, "cannot use") {
 		t.Errorf("Skipped() = %+v", skipped)
 	}
-	if fs := g.Package("example.com/broken"); len(fs) != 0 {
-		t.Errorf("functions of a package that does not type-check: %+v", fs)
+	// A package that imports it is left out too, and says why.
+	if len(skipped) == 2 && (skipped[1].Path != "example.com/broken/user" || skipped[1].Error != "imports example.com/broken, which does not type-check") {
+		t.Errorf("Skipped()[1] = %+v", skipped[1])
+	}
+	for _, path := range []string{"example.com/broken", "example.com/broken/user"} {
+		if fs := g.Package(path); len(fs) != 0 {
+			t.Errorf("functions of %s: %+v", path, fs)
+		}
 	}
 }
 
