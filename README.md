@@ -17,7 +17,7 @@ See how a Go module is built and how its code runs, in your browser.
 
 pkgsight draws a Go module as a map of its packages, and follows the calls from any function. Claude can add notes in your language, and they show next to the code.
 
-![The call flow of declscope, with notes in Japanese](docs/assets/call-flow.png)
+![The call flow of pkgsight, with its notes in Japanese](docs/assets/call-flow.png)
 
 ## Install
 
@@ -79,11 +79,11 @@ Arguments are package patterns, `./...` by default. The URL holds what is on scr
 
 ### Package map
 
-![The package map of declscope](docs/assets/package-map.png)
+![The package map of pkgsight](docs/assets/package-map.png)
 
 Double-click a package to see the functions inside it and the calls between them.
 
-![Inside the config package of declscope](docs/assets/inside.png)
+![Inside the notes package of pkgsight](docs/assets/inside.png)
 
 ### Call flow
 
