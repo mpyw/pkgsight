@@ -14,8 +14,10 @@ import (
 
 	"github.com/mpyw/pkgsight/internal/callgraph"
 	"github.com/mpyw/pkgsight/internal/load"
+	"github.com/mpyw/pkgsight/internal/model"
 	"github.com/mpyw/pkgsight/internal/notes"
 	"github.com/mpyw/pkgsight/internal/server"
+	"github.com/mpyw/pkgsight/internal/watch"
 	"github.com/mpyw/pkgsight/web"
 )
 
@@ -34,6 +36,7 @@ func serveCommand() *cli.Command {
 			dirFlag(),
 			&cli.StringFlag{Name: "addr", Value: "localhost:7878", Usage: "the address to listen on"},
 			&cli.BoolFlag{Name: "open", Value: true, Usage: "open the browser; --open=false does not"},
+			&cli.BoolFlag{Name: "watch", Value: true, Usage: "analyze again when the code changes; --watch=false does not"},
 		},
 		OnUsageError: usageError,
 		Action:       serveAction,
@@ -75,17 +78,12 @@ func serveAction(ctx context.Context, cmd *cli.Command) error {
 	api := server.New(g, web.Dist(), store, currentVersion())
 	go func() {
 		start := time.Now()
-		calls, err := callgraph.Build(ctx, dir, pats...)
-		took := time.Since(start)
-		if err != nil {
-			logger.Printf("call graph: %v", err)
-		} else {
-			logger.Printf("built the call graph in %s", took.Round(time.Millisecond))
-			for _, p := range calls.Skipped() {
-				logger.Printf("call graph: left out %s, which does not type-check: %s", p.Path, p.Error)
-			}
+		calls, err := serveCallGraph(ctx, logger, dir, pats)
+		api.SetCalls(calls, err, time.Since(start))
+		// Watch only now, so a reload never lands before the first build.
+		if cmd.Bool("watch") {
+			serveWatching(ctx, logger, api, g, dir, pats)
 		}
-		api.SetCalls(calls, err, took)
 	}()
 
 	// Requests share ctx, so open streams end when the server stops.
@@ -104,6 +102,47 @@ func serveAction(ctx context.Context, cmd *cli.Command) error {
 		return err
 	}
 	return nil
+}
+
+// serveCallGraph builds the call graph, and logs how it went.
+func serveCallGraph(ctx context.Context, logger *log.Logger, dir string, pats []string) (*callgraph.Graph, error) {
+	start := time.Now()
+	calls, err := callgraph.Build(ctx, dir, pats...)
+	if err != nil {
+		logger.Printf("call graph: %v", err)
+		return nil, err
+	}
+	logger.Printf("built the call graph in %s", time.Since(start).Round(time.Millisecond))
+	for _, p := range calls.Skipped() {
+		logger.Printf("call graph: left out %s, which does not type-check: %s", p.Path, p.Error)
+	}
+	return calls, nil
+}
+
+// serveWatching analyzes the code again each time it changes, until ctx
+// ends, and hands the result to api. g is the package graph to start from.
+func serveWatching(ctx context.Context, logger *log.Logger, api *server.Server, g *model.Graph, dir string, pats []string) {
+	snapshot := func() string {
+		var dirs []string
+		for _, p := range g.Packages {
+			if p.Kind == model.KindOwn {
+				dirs = append(dirs, p.Dir)
+			}
+		}
+		return watch.Snapshot(g.Root, dirs)
+	}
+	watch.Run(ctx, 500*time.Millisecond, snapshot, func() {
+		start := time.Now()
+		next, err := load.Graph(ctx, dir, pats...)
+		if err != nil {
+			logger.Printf("reload: %v", err)
+			return
+		}
+		calls, err := serveCallGraph(ctx, logger, dir, pats)
+		g = next
+		api.Reload(next, calls, err, time.Since(start))
+		logger.Printf("reloaded after a change, in %s", time.Since(start).Round(time.Millisecond))
+	})
 }
 
 // openServedPage opens url with the platform's opener.

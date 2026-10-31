@@ -85,8 +85,9 @@ The browser opens on the package map. The call flow is ready a few seconds later
 | `--dir`, `-C` | `.` | Directory to run in |
 | `--addr` | `localhost:7878` | Address to listen on |
 | `--open` | `true` | Open the browser |
+| `--watch` | `true` | Analyze again when the code changes |
 
-The URL holds what is on screen, so you can share a view by its link.
+When you save a file, the browser shows the new code in a few seconds, and keeps what is on screen. The URL holds what is on screen, so you can share a view by its link.
 
 ### Package map
 

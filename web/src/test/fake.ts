@@ -259,12 +259,15 @@ export interface FakeOptions {
 export class FakeSource implements DataSource {
   watchers = new Set<() => void>();
   searches: string[] = [];
+  // How many times each was asked for, to see a reload fetch anew.
+  graphCalls = 0;
+  funcCalls: string[] = [];
   private statusIndex = 0;
 
   constructor(private o: FakeOptions = {}) {}
 
   graph = () =>
-    this.o.failGraph
+    ++this.graphCalls && this.o.failGraph
       ? Promise.reject(new Error("GET /api/graph: 500 boom"))
       : Promise.resolve(graph);
 
@@ -277,6 +280,7 @@ export class FakeSource implements DataSource {
   entries = () => Promise.resolve(entries);
 
   func = (id: string) => {
+    this.funcCalls.push(id);
     const d = details.get(id);
     return d ? Promise.resolve(d) : Promise.reject(new Error(`no ${id}`));
   };
@@ -311,9 +315,21 @@ export class FakeSource implements DataSource {
 
   asset = (path: string) => `/api/asset?path=${path}`;
 
+  private codeWatchers = new Set<() => void>();
+
   watchNotes(changed: () => void): () => void {
     this.watchers.add(changed);
     return () => this.watchers.delete(changed);
+  }
+
+  watchCode(changed: () => void): () => void {
+    this.codeWatchers.add(changed);
+    return () => this.codeWatchers.delete(changed);
+  }
+
+  // reload plays the server telling that it analyzed the code again.
+  reload() {
+    for (const w of this.codeWatchers) w();
   }
 
   // notify plays the server telling that notes changed.

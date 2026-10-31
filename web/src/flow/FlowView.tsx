@@ -54,6 +54,19 @@ const entrySections: { reason: Entry["reason"]; title: string; tip: string }[] =
   ];
 const edgeTypes = { flow: FlowEdge };
 
+interface Load {
+  source: DataSource;
+  details: ReadonlyMap<string, FuncDetail>;
+  failed: ReadonlyMap<string, string>;
+}
+
+const noDetails: ReadonlyMap<string, FuncDetail> = new Map();
+const noFailures: ReadonlyMap<string, string> = new Map();
+
+function emptyLoad(source: DataSource): Load {
+  return { source, details: new Map(), failed: new Map() };
+}
+
 export function FlowView(props: Props) {
   return (
     <ReactFlowProvider>
@@ -64,13 +77,15 @@ export function FlowView(props: Props) {
 
 function Flow({ source, root, onRoot, onShowPackage }: Props) {
   const status = useCallStatus(source);
-  const [details, setDetails] = useState<ReadonlyMap<string, FuncDetail>>(
-    new Map(),
-  );
-  const inflight = useRef(new Set<string>());
+  // What was loaded from source. A new source, after the code changed,
+  // starts empty, and answers to the old one are dropped.
+  const [loaded, setLoaded] = useState(() => emptyLoad(source));
+  if (loaded.source !== source) setLoaded(emptyLoad(source));
+  const details = loaded.source === source ? loaded.details : noDetails;
   // Functions whose details failed to load, with why. They are not asked
   // for again until the reader says so.
-  const [failed, setFailed] = useState<ReadonlyMap<string, string>>(new Map());
+  const failed = loaded.source === source ? loaded.failed : noFailures;
+  const inflight = useRef({ source, ids: new Set<string>() });
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(
     new Set(root ? [root] : []),
   );
@@ -81,14 +96,26 @@ function Flow({ source, root, onRoot, onShowPackage }: Props) {
 
   const ensure = useCallback(
     (ids: string[]) => {
+      if (inflight.current.source !== source)
+        inflight.current = { source, ids: new Set() };
+      const asked = inflight.current.ids;
       for (const id of ids) {
-        if (inflight.current.has(id)) continue;
-        inflight.current.add(id);
+        if (asked.has(id)) continue;
+        asked.add(id);
         source.func(id).then(
-          (d) => setDetails((prev) => new Map(prev).set(id, d)),
+          (d) =>
+            setLoaded((prev) =>
+              prev.source === source
+                ? { ...prev, details: new Map(prev.details).set(id, d) }
+                : prev,
+            ),
           (e: unknown) => {
-            inflight.current.delete(id);
-            setFailed((prev) => new Map(prev).set(id, String(e)));
+            asked.delete(id);
+            setLoaded((prev) =>
+              prev.source === source
+                ? { ...prev, failed: new Map(prev.failed).set(id, String(e)) }
+                : prev,
+            );
           },
         );
       }
@@ -272,7 +299,12 @@ function Flow({ source, root, onRoot, onShowPackage }: Props) {
           <p>
             Could not load <code>{root}</code>: {failed.get(root)}
           </p>
-          <button className="chip" onClick={() => setFailed(new Map())}>
+          <button
+            className="chip"
+            onClick={() =>
+              setLoaded((prev) => ({ ...prev, failed: new Map() }))
+            }
+          >
             Try again
           </button>
         </div>

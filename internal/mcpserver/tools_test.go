@@ -16,6 +16,7 @@ import (
 	"github.com/mpyw/pkgsight/internal/callgraph"
 	"github.com/mpyw/pkgsight/internal/load"
 	"github.com/mpyw/pkgsight/internal/mcpserver"
+	"github.com/mpyw/pkgsight/internal/model"
 	"github.com/mpyw/pkgsight/internal/notes"
 )
 
@@ -45,7 +46,7 @@ func connect(t *testing.T, dir string) *session {
 	}
 	s := &session{notes: store, calls: func() (*callgraph.Graph, error) { return calls, nil }}
 	h := mcpserver.Handler(mcpserver.Backend{
-		Graph: g,
+		Graph: func() *model.Graph { return g },
 		Notes: store,
 		Calls: func() (*callgraph.Graph, error) { return s.calls() },
 		ReadSource: func(file string) ([]byte, error) {

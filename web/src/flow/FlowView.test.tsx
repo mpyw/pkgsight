@@ -8,6 +8,7 @@ import {
   within,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { anew } from "../data/source";
 import { NotesContext } from "../notes/useNotes";
 import { FakeSource, get, main, notesJa, run } from "../test/fake";
 import { FlowView } from "./FlowView";
@@ -208,4 +209,46 @@ describe("FlowView tree", () => {
     await waitFor(() => expect(nodeOf("Run")).toBeTruthy());
     expect(func.mock.calls.filter(([id]) => id === main.id)).toHaveLength(2);
   });
+});
+
+describe("FlowView after the code changed", () => {
+  it.each(["succeeds", "fails"])(
+    "drops an answer that %s for the source it left",
+    async (how) => {
+      // A source whose answers wait until the test lets them through.
+      const waiting: (() => void)[] = [];
+      const slow = new FakeSource();
+      const answer =
+        how === "fails"
+          ? () => Promise.reject(new Error("late"))
+          : slow.func.bind(slow);
+      slow.func = (id: string) =>
+        new Promise((resolve, reject) =>
+          waiting.push(() => {
+            answer(id).then(resolve, reject);
+          }),
+        );
+      const { rerender } = show(slow, main.id);
+      await waitFor(() => expect(waiting.length).toBeGreaterThan(0));
+
+      rerender(
+        <NotesContext.Provider value={notesJa}>
+          <FlowView
+            source={anew(new FakeSource())}
+            root={main.id}
+            onRoot={vi.fn()}
+            onShowPackage={vi.fn()}
+          />
+        </NotesContext.Provider>,
+      );
+      await waitFor(() => expect(nodeOf("main")).toBeTruthy());
+      // The old answer lands after the switch, and changes nothing.
+      await act(async () => {
+        for (const go of waiting) go();
+        await Promise.resolve();
+      });
+      expect(screen.queryByText(/Could not load/)).toBeNull();
+      expect(nodeOf("main")).toBeTruthy();
+    },
+  );
 });

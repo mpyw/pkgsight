@@ -382,3 +382,45 @@ func TestNotesViewMarksStaleNotes(t *testing.T) {
 		t.Errorf("notes = %+v", v)
 	}
 }
+
+func TestReload(t *testing.T) {
+	srv, root, _ := sampleServer(t)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL+"/api/notes/events", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	// A new file appears, and the code is analyzed again.
+	if err := os.WriteFile(filepath.Join(root, "app", "more.go"), []byte("package app\n\nfunc More() {}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	get(t, srv.URL+"/api/source?file=app/more.go", http.StatusNotFound)
+	g, err := load.Graph(context.Background(), root, "./...")
+	if err != nil {
+		t.Fatal(err)
+	}
+	calls, err := callgraph.Build(context.Background(), root, "./...")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := srv.Config.Handler.(*server.Server)
+	s.Reload(g, calls, nil, time.Second)
+
+	line, err := bufio.NewReader(resp.Body).ReadString('\n')
+	if err != nil || line != "event: code\n" {
+		t.Errorf("first event line = %q (%v)", line, err)
+	}
+	get(t, srv.URL+"/api/source?file=app/more.go", http.StatusOK)
+	get(t, srv.URL+"/api/calls/func?id=example.com/sample/app.More", http.StatusOK)
+	if body := get(t, srv.URL+"/api/graph", http.StatusOK); !strings.Contains(body, "more.go") {
+		t.Error("the package graph still lacks more.go")
+	}
+}

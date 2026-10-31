@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import {
+  act,
   fireEvent,
   render,
   screen,
@@ -8,7 +9,7 @@ import {
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
-import { FakeSource } from "./test/fake";
+import { FakeSource, main } from "./test/fake";
 
 beforeEach(() => {
   localStorage.clear();
@@ -127,6 +128,28 @@ describe("App", () => {
     fireEvent.change(select, { target: { value: "" } });
     await waitFor(() => expect(select.value).toBe(""));
     expect(localStorage.getItem("pkgsight.notesLang")).toBe("off");
+  });
+
+  it("fetches anew when the server analyzed the code again", async () => {
+    history.replaceState(
+      null,
+      "",
+      `#view=flow&fn=${encodeURIComponent(main.id)}`,
+    );
+    const source = new FakeSource();
+    render(<App source={source} />);
+    expect(await screen.findByText("Call graph built in 1.2s")).toBeTruthy();
+    await waitFor(() => expect(source.funcCalls).toContain(main.id));
+    const before = source.funcCalls.filter((id) => id === main.id).length;
+    act(() => source.reload());
+    await waitFor(() => expect(source.graphCalls).toBe(2));
+    await waitFor(() =>
+      expect(source.funcCalls.filter((id) => id === main.id).length).toBe(
+        before + 1,
+      ),
+    );
+    // The place stays.
+    expect(location.hash).toContain("view=flow");
   });
 
   it("titles a module-less graph by its root", async () => {

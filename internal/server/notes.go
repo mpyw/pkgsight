@@ -48,7 +48,7 @@ func (s *Server) notesView(w http.ResponseWriter, r *http.Request) {
 	}
 	g, _ := s.callGraph()
 	var report freshness.Report
-	code := freshness.New(s.model, g, s.readSource)
+	code := freshness.New(s.packageGraph(), g, s.readSource)
 	if g != nil {
 		report = code.Check(book)
 	}
@@ -78,7 +78,8 @@ func placedNotes(code *freshness.Code, n notes.FuncNote, fn model.Func) []notes.
 }
 
 // notesEvents streams the language of each book that changes, so the
-// frontend shows a note as soon as the assistant writes it.
+// frontend shows a note as soon as the assistant writes it. It streams each
+// reload of the code too, as a code event.
 //
 //declscope:shared // routes in server.go serves it
 func (s *Server) notesEvents(w http.ResponseWriter, r *http.Request) {
@@ -89,6 +90,8 @@ func (s *Server) notesEvents(w http.ResponseWriter, r *http.Request) {
 	}
 	ch, cancel := s.notes.Subscribe()
 	defer cancel()
+	code, stop := s.subscribeCode()
+	defer stop()
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.WriteHeader(http.StatusOK)
@@ -99,6 +102,11 @@ func (s *Server) notesEvents(w http.ResponseWriter, r *http.Request) {
 			return
 		case lang := <-ch:
 			if _, err := fmt.Fprintf(w, "event: notes\ndata: %s\n\n", lang); err != nil {
+				return
+			}
+			flusher.Flush()
+		case <-code:
+			if _, err := fmt.Fprint(w, "event: code\ndata: reloaded\n\n"); err != nil {
 				return
 			}
 			flusher.Flush()

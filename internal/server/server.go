@@ -26,26 +26,39 @@ import (
 
 // Server answers the API. The package graph is there from the start; the
 // call graph arrives later through SetCalls, since it takes longer to build.
+// Reload replaces both when the code changes.
 type Server struct {
-	//declscope:shared // notes.go reads the code its notes describe
-	model  *model.Graph
-	graph  []byte
 	root   string
-	files  map[string]bool
 	assets fs.FS
 	//declscope:shared // notes.go serves the notes
 	notes *notes.Store
 	mux   *http.ServeMux
 
-	mu       sync.RWMutex
+	mu sync.RWMutex
+	// model is the package graph, graph its JSON, and files the source
+	// files that may be served.
+	model    *model.Graph
+	graph    []byte
+	files    map[string]bool
 	calls    *callgraph.Graph
 	callsErr error
 	took     time.Duration
+	// subs hear each reload of the code.
+	subs map[chan struct{}]struct{}
 }
 
 // New returns a server for g that serves assets for every path outside /api
 // and /mcp, and keeps notes in store. version is what MCP reports.
 func New(g *model.Graph, assets fs.FS, store *notes.Store, version string) *Server {
+	s := &Server{root: g.Root, assets: assets, notes: store, subs: map[chan struct{}]struct{}{}}
+	s.setGraph(g)
+	s.mux = s.routes(version)
+	return s
+}
+
+// setGraph takes g as the package graph. The caller holds s.mu, or has not
+// shared s yet.
+func (s *Server) setGraph(g *model.Graph) {
 	graph, err := json.Marshal(g)
 	if err != nil {
 		panic(err)
@@ -58,9 +71,47 @@ func New(g *model.Graph, assets fs.FS, store *notes.Store, version string) *Serv
 			}
 		}
 	}
-	s := &Server{model: g, graph: graph, root: g.Root, files: files, assets: assets, notes: store}
-	s.mux = s.routes(version)
-	return s
+	s.model, s.graph, s.files = g, graph, files
+}
+
+// packageGraph returns the package graph.
+//
+//declscope:shared // notes.go reads the code its notes describe
+func (s *Server) packageGraph() *model.Graph {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.model
+}
+
+// Reload takes the graphs of the code as it is now, at once, so no request
+// sees one graph without the other. Then it tells the frontend.
+func (s *Server) Reload(g *model.Graph, calls *callgraph.Graph, err error, took time.Duration) {
+	s.mu.Lock()
+	s.setGraph(g)
+	s.calls, s.callsErr, s.took = calls, err, took
+	for ch := range s.subs {
+		select {
+		case ch <- struct{}{}:
+		default:
+		}
+	}
+	s.mu.Unlock()
+}
+
+// subscribeCode returns a channel that hears each reload, and a function
+// that ends the subscription.
+//
+//declscope:shared // notesEvents in notes.go streams reloads too
+func (s *Server) subscribeCode() (<-chan struct{}, func()) {
+	ch := make(chan struct{}, 1)
+	s.mu.Lock()
+	s.subs[ch] = struct{}{}
+	s.mu.Unlock()
+	return ch, func() {
+		s.mu.Lock()
+		delete(s.subs, ch)
+		s.mu.Unlock()
+	}
 }
 
 // callGraph returns the call graph, or nil while it is building. The error
@@ -87,8 +138,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (s *Server) routes(version string) *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/graph", func(w http.ResponseWriter, _ *http.Request) {
+		s.mu.RLock()
+		graph := s.graph
+		s.mu.RUnlock()
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write(s.graph)
+		_, _ = w.Write(graph)
 	})
 	mux.HandleFunc("GET /api/calls/status", s.status)
 	mux.HandleFunc("GET /api/calls/entries", s.withCalls(func(g *callgraph.Graph, _ *http.Request) (any, int) {
@@ -119,7 +173,7 @@ func (s *Server) routes(version string) *http.ServeMux {
 	mux.HandleFunc("GET /api/notes", s.notesView)
 	mux.HandleFunc("GET /api/notes/events", s.notesEvents)
 	mcpHandler := mcpserver.Handler(mcpserver.Backend{
-		Graph:      s.model,
+		Graph:      s.packageGraph,
 		Notes:      s.notes,
 		Calls:      s.callGraph,
 		ReadSource: s.readSource,
@@ -172,7 +226,10 @@ func (s *Server) withCalls(h func(*callgraph.Graph, *http.Request) (any, int)) h
 // source serves a Go file of an own package, and nothing else.
 func (s *Server) source(w http.ResponseWriter, r *http.Request) {
 	file := r.URL.Query().Get("file")
-	if !s.files[file] {
+	s.mu.RLock()
+	known := s.files[file]
+	s.mu.RUnlock()
+	if !known {
 		http.Error(w, "not a file of the module", http.StatusNotFound)
 		return
 	}

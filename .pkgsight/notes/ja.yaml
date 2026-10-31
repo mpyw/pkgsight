@@ -13,7 +13,7 @@ packages:
 
       > [!NOTE]
       > エラーの表示と終了コードは `runMain` が一手に決める。使い方の誤りは 2、`notes check` の失敗は 1。
-    fingerprint: 6b9c9906303037a9
+    fingerprint: 3d89e85b31340451
   github.com/mpyw/pkgsight/internal/callgraph:
     summary: 自前のパッケージのコールグラフ（どの関数がどれを呼ぶか）を作る
     doc: |-
@@ -95,7 +95,7 @@ packages:
     summary: 画面と MCP に、解析結果と注釈を配る HTTP サーバー
     doc: server パッケージは、パッケージグラフ、コールグラフ、注釈を、それを描くフロントエンドと、MCP 越しのアシスタントに配る。
     body: |-
-      パッケージグラフは起動時から持ち、コールグラフは後から `SetCalls` で受け取る。それまでコールグラフが要る API は 503 を返す。
+      パッケージグラフは起動時から持ち、コールグラフは後から `SetCalls` で受け取る。それまでコールグラフが要る API は 503 を返す。コードが変わると、`Reload` が両方を一度に差し替える。
 
       外に出すものは絞っている。`/api/source` は自分のパッケージのファイルだけ、`/api/asset` はルートの下の画像だけ（`os.Root` で外に出られない）。`/mcp` は別オリジンのページからの書き込みを拒む。
 
@@ -103,7 +103,15 @@ packages:
       | --- | --- |
       | `server.go` | 経路、グラフと状態、ソースと画像、UI |
       | `notes.go` | 注釈の読み出しと、変更の通知（SSE） |
-    fingerprint: 0b18e2f55079d55e
+    fingerprint: 73745a7dc2c7b37e
+  github.com/mpyw/pkgsight/internal/watch:
+    summary: モジュールの Go のコードが変わったことに気づく
+    doc: |-
+      watch パッケージは、モジュールの Go のコードが変わったことを知らせる。
+
+      OS に通知を頼まず、自分で定期的に確かめる。macOS の通知は見張るファイル 1 つごとにファイル記述子を使うので、大きなモジュールでは足りなくなる。確かめるのは、各パッケージのディレクトリにある Go のファイルの大きさと更新時刻だけ。
+    body: fsnotify は採らなかった（AGENTS.md）。macOS の kqueue はファイルごとにファイル記述子を開き、既定の上限は 256 しかない。
+    fingerprint: 42d42fc5f2cbd579
   github.com/mpyw/pkgsight/web:
     summary: ビルド済みのフロントエンドを埋め込む
     doc: web パッケージはビルド済みのフロントエンドを持つ。dist を埋めるには `mise run web-build` を実行する。
@@ -350,7 +358,7 @@ funcs:
     summary: 指紋を計算するためのコード読み取りを作る
     doc: code は、指紋のためにモジュールのコードを読む。コールグラフが構築中だと g は nil で、読めるのは doc コメントだけになる。
     body: 呼ぶたびに新しく作る。`freshness.Code` は読んだファイルを覚えるので、1 回のツール呼び出しの中では同じファイルを読み直さない。
-    fingerprint: 4d2348ab5e61d90a
+    fingerprint: f3168f1e501ee5cf
   (*github.com/mpyw/pkgsight/internal/mcpserver.tools).deleteNotes:
     summary: 一つの言語の注釈を消す
     body: 空になった言語のファイルは `notes.Store` が消す。
@@ -379,7 +387,7 @@ funcs:
   (*github.com/mpyw/pkgsight/internal/mcpserver.tools).importers:
     summary: このパッケージを import する自分のパッケージ
     body: パッケージグラフには逆向きの辺が無いので、全パッケージを見て集める。
-    fingerprint: 8806e59784167566
+    fingerprint: 719822eca11f7867
   (*github.com/mpyw/pkgsight/internal/mcpserver.tools).needCalls:
     summary: コールグラフを取り、無ければ理由をエラーにする
     body: 構築中と構築失敗を別のエラーにする。構築中なら、モデルは少し待って同じツールを呼び直せばよい。
@@ -387,7 +395,7 @@ funcs:
   (*github.com/mpyw/pkgsight/internal/mcpserver.tools).overview:
     summary: モジュール全体の見取り図をモデルに渡す
     body: モデルが最初に呼ぶツール。パッケージ、import、入口、注釈のある言語と、古い注釈の数を 1 回で返す。
-    fingerprint: 9c0bca734ac8b1fd
+    fingerprint: 5058288cd1d32585
     lines:
       - offset: 13
         hash: dbbc9a7d
@@ -404,7 +412,7 @@ funcs:
     fingerprint: 604d339723517a37
   (*github.com/mpyw/pkgsight/internal/mcpserver.tools).ownPackage:
     summary: パスがモジュール自身のパッケージか調べる
-    fingerprint: debdc158fa925f55
+    fingerprint: 6965279bfdeeb44b
   (*github.com/mpyw/pkgsight/internal/mcpserver.tools).packageInfo:
     summary: パッケージの doc、依存、関数一覧を返す
     body: doc コメントは全文を返す。パッケージグラフには最初の 1 文しか無いので、ファイルを読み直している。
@@ -515,6 +523,19 @@ funcs:
   (*github.com/mpyw/pkgsight/internal/notes.Store).write$1:
     summary: 失敗時に一時ファイルを片付ける
     fingerprint: 3ba8c831df9b7237
+  (*github.com/mpyw/pkgsight/internal/server.Server).Reload:
+    summary: コードの変更後に、両方のグラフを一度に差し替える
+    doc: Reload は、今のコードのグラフを一度に受け取る。片方のグラフだけが新しいリクエストが生まれないようにするため。そのあと画面に知らせる。
+    body: 作り直している間は、古いグラフがそのまま答え続ける。画面は差し替えの後に `code` イベントを受けて読み直すので、ちらつかない。
+    fingerprint: adc8b3f2cf604ae2
+    lines:
+      - offset: 1
+        hash: 010e0b86
+        text: パッケージグラフとコールグラフを 1 つのロックの中で替える。途中の状態を見るリクエストはない
+        kind: important
+      - offset: 5
+        hash: 8b3b23ab
+        text: 購読者が詰まっていたら送らずに捨てる。届くのは「読み直して」という合図だけなので、1 つ届けば足りる
   (*github.com/mpyw/pkgsight/internal/server.Server).ServeHTTP:
     summary: 経路表に処理を渡す
     fingerprint: 3024e35eb808fac8
@@ -548,17 +569,17 @@ funcs:
   (*github.com/mpyw/pkgsight/internal/server.Server).notesEvents:
     summary: 注釈が変わるたびにブラウザへ知らせる
     doc: notesEvents は、変わった注釈の言語を流し続ける。アシスタントが注釈を書くとすぐに画面に出る。
-    body: Server-Sent Events。中身は言語だけで、画面はそれを受けて `/api/notes` を読み直す。
-    fingerprint: d0fe2d35728601dc
+    body: Server-Sent Events。注釈が変わると `notes`（中身は言語）、コードを読み直すと `code` を送る。画面はそれぞれ注釈か、すべてのデータを読み直す。
+    fingerprint: aa4bf541bb870c98
     lines:
       - offset: 1
         hash: 2dbb8ef3
         text: Flush できない ResponseWriter では流せない
-      - offset: 14
+      - offset: 16
         hash: a224221c
         text: サーバーの終了でも抜ける。cmd 側が BaseContext に止まる ctx を渡している
         kind: important
-      - offset: 16
+      - offset: 18
         hash: eb2199cc
         text: 購読のチャネルは溢れたら捨てられる。通知は「変わった」とだけ伝わればよい
   (*github.com/mpyw/pkgsight/internal/server.Server).notesView:
@@ -567,10 +588,10 @@ funcs:
       行の注釈は、行番号ではなく `func` からの位置と行のハッシュで持っている。ここで今のソースの行に置き直す。
 
       コールグラフが出来るまでは、関数の位置も古さも分からない。その間は行の注釈も `stale` も付けずに返す。
-    fingerprint: 6918f6aa216da4fd
+    fingerprint: 8a869b5ba8fd067b
     lines:
       - offset: 11
-        hash: 250daefc
+        hash: 1ad95a04
         text: ファイルは freshness.Code が読み、置き直しと指紋の両方で使い回す
       - offset: 12
         hash: 871038f3
@@ -578,6 +599,11 @@ funcs:
       - offset: 21
         hash: 2d57b40c
         text: 関数が消えた注釈（orphan）は位置が無いので、行は付けない
+  (*github.com/mpyw/pkgsight/internal/server.Server).packageGraph:
+    summary: 今のパッケージグラフを返す
+    doc: packageGraph はパッケージグラフを返す。
+    body: コードが変わると `Reload` が差し替えるので、使うたびにこれで読む。MCP のツールも同じ関数経由で読む。
+    fingerprint: da2e55cb8e03d3d6
   (*github.com/mpyw/pkgsight/internal/server.Server).readSource:
     summary: モジュールのファイルをルートからのパスで読む
     doc: readSource は、モジュールのファイルをルートからのスラッシュ区切りのパスで読む。
@@ -591,17 +617,17 @@ funcs:
   (*github.com/mpyw/pkgsight/internal/server.Server).routes:
     summary: API、MCP、UI の経路をまとめて登録する
     body: '`/mcp` は GET、POST、DELETE の 3 つを個別に登録する。メソッドを付けないパターンは `GET /` とぶつかって、`ServeMux` が起動時に panic する。'
-    fingerprint: 19bebbc1b7c28801
+    fingerprint: acc9133ad306874a
     lines:
-      - offset: 34
+      - offset: 37
         hash: "65688555"
         text: MCP は同じプロセスで答える。ブラウザと同じ注釈ストアを共有するので、書いた注釈がすぐ画面に出る
         kind: note
-      - offset: 41
+      - offset: 44
         hash: daec2ed9
         text: メソッドなしの `/mcp` は `GET /` と衝突する。メソッドごとに登録する
         kind: warning
-      - offset: 44
+      - offset: 47
         hash: 1faac093
         text: 最後に残りの GET をすべて UI に回す
   (*github.com/mpyw/pkgsight/internal/server.Server).routes$3:
@@ -617,14 +643,23 @@ funcs:
       - offset: 5
         hash: fbf98a86
         text: 200 を超える limit は 200 で頭打ちにする
+  (*github.com/mpyw/pkgsight/internal/server.Server).setGraph:
+    summary: パッケージグラフを受け取り、JSON とソースの一覧を作り直す
+    doc: setGraph は g をパッケージグラフとして受け取る。呼び出し側は s.mu を持っているか、まだ s を誰とも共有していないこと。
+    fingerprint: ced9edf2b9c81882
+    lines:
+      - offset: 5
+        hash: 02d74eb8
+        text: '`/api/source` が返してよいファイルの一覧。自分のパッケージのファイルだけ'
+        kind: important
   (*github.com/mpyw/pkgsight/internal/server.Server).source:
     summary: 自分のパッケージのソースだけを返す
     doc: source は、自分のパッケージの Go ファイルを返し、それ以外は返さない。
-    fingerprint: 6dff5f00acd47ef7
+    fingerprint: fe6b00aa818bedf9
     lines:
-      - offset: 2
-        hash: 18f04e1a
-        text: '`New` が作った一覧にあるファイルだけ。`../` などは一覧に無いので 404 になる'
+      - offset: 3
+        hash: ee7268b7
+        text: 今のパッケージグラフから作った一覧にあるファイルだけ返す。`../` などは一覧に無いので 404 になる
         kind: important
   (*github.com/mpyw/pkgsight/internal/server.Server).status:
     summary: コールグラフの構築状態を返す
@@ -638,6 +673,10 @@ funcs:
         hash: cfe131d4
         text: 除外したパッケージの関数はコールグラフに無い。黙って消さないために返す
         kind: important
+  (*github.com/mpyw/pkgsight/internal/server.Server).subscribeCode:
+    summary: コードの読み直しを聞くチャネルを返す
+    doc: subscribeCode は、読み直しのたびに知らせを受けるチャネルと、購読を終える関数を返す。
+    fingerprint: 53daf8bba90f4e42
   (*github.com/mpyw/pkgsight/internal/server.Server).withCalls:
     summary: コールグラフが要るハンドラーを包む
     doc: withCalls は、コールグラフが出来るまで 503 を返す。
@@ -777,7 +816,7 @@ funcs:
       4. コールグラフは裏で作る
 
       注釈を待ち受けより先に読むのは、注釈ファイルが壊れていたときに、開いたポートを残さず終わるため。
-    fingerprint: 9b36c7075dd9fb7e
+    fingerprint: 31fc327bc67fe379
     lines:
       - offset: 11
         hash: 227958ea
@@ -786,25 +825,25 @@ funcs:
       - offset: 29
         hash: 9c5ddf0d
         text: コールグラフは裏のゴルーチンで作る。地図は先に使える
-      - offset: 48
+      - offset: 43
         hash: b8381179
         text: リクエストに ctx を渡す。これがないと、注釈の SSE ストリームが終了時に切れず、Shutdown が 3 秒待たされる
         kind: important
-      - offset: 56
+      - offset: 51
         hash: 73303ff2
         text: '`Shutdown` による終了は正常終了。それ以外のエラーだけを返す'
   github.com/mpyw/pkgsight/cmd/pkgsight.serveAction$1:
-    summary: コールグラフを裏で作り、できたらサーバーに渡す
+    summary: コールグラフを裏で作ってサーバーに渡し、変更の監視を始める
     body: パッケージ地図は go list だけで描けるので、先に配信を始める。時間のかかるコールグラフ作りは、このゴルーチンで裏で進める。終わるまで、Call flow などの API は 503 を返す。
-    fingerprint: 3ff5b61fac49cf4a
+    fingerprint: 4e0f659c82da9b37
     lines:
-      - offset: 8
-        hash: 576862c0
-        text: 型チェックに通らないパッケージは、関数ごとコールグラフから消える。黙って消えないよう、パッケージ名と理由をログに出す
-        kind: important
-      - offset: 12
-        hash: b7160ca3
+      - offset: 3
+        hash: e154763e
         text: 失敗したときもエラーとともに渡す。状態 API が `error` を返せるようになる
+      - offset: 4
+        hash: 0789e1e5
+        text: 監視は最初のコールグラフを渡した後に始める。遅い初回の結果が、新しい読み直しの結果を上書きしないため
+        kind: important
   github.com/mpyw/pkgsight/cmd/pkgsight.serveAction$3:
     summary: ctx が終わったらサーバーを止める
     fingerprint: ce14174e87b25d70
@@ -812,14 +851,44 @@ funcs:
       - offset: 2
         hash: "29987354"
         text: 止めるのに 3 秒だけ待つ。それを過ぎると開いている接続ごと打ち切る
+  github.com/mpyw/pkgsight/cmd/pkgsight.serveCallGraph:
+    summary: コールグラフを作り、結果をログに出す
+    doc: serveCallGraph はコールグラフを作り、どうだったかをログに出す。
+    fingerprint: 840955221b0c8c79
+    lines:
+      - offset: 8
+        hash: 576862c0
+        text: 型チェックに通らないパッケージは、関数ごとコールグラフから消える。黙って消えないよう、パッケージ名と理由をログに出す
+        kind: important
   github.com/mpyw/pkgsight/cmd/pkgsight.serveCommand:
     summary: pkgsight serve の定義とフラグ
     doc: serveCommand は pkgsight serve。
-    fingerprint: 7bab99d305af4542
+    fingerprint: 2b0fa3056d402d99
     lines:
       - offset: 11
         hash: 32713c03
         text: 既定で開く。`--open=false` で開かない（BoolFlag は `--no-open` を持たない）
+      - offset: 12
+        hash: d9befe54
+        text: 既定で見張る。大きなモジュールで読み直しが重いときは `--watch=false`
+  github.com/mpyw/pkgsight/cmd/pkgsight.serveWatching:
+    summary: コードが変わるたびに解析し直して、サーバーに渡す
+    doc: serveWatching は、ctx が終わるまで、コードが変わるたびに解析し直し、結果を api に渡す。g は出発点のパッケージグラフ。
+    body: 見張るのは、今のパッケージグラフにある自分のパッケージのディレクトリ。新しいパッケージを足すと、どこかのファイルがそれを import するので、その変更で読み直したときに見張る対象にも加わる。
+    fingerprint: f116ec3004330ed9
+    lines:
+      - offset: 13
+        hash: 04bbeda4
+        text: go list が失敗したら、古いグラフのまま次の変更を待つ
+      - offset: 18
+        hash: 1a94008e
+        text: 次から見張るディレクトリは、新しいパッケージグラフのものになる
+  github.com/mpyw/pkgsight/cmd/pkgsight.serveWatching$1:
+    summary: 今のパッケージのディレクトリから、ファイルの指紋を取る
+    fingerprint: 0e1657d83c059de9
+  github.com/mpyw/pkgsight/cmd/pkgsight.serveWatching$2:
+    summary: 両方のグラフを作り直して、サーバーに渡す
+    fingerprint: 9025021328504d6e
   github.com/mpyw/pkgsight/cmd/pkgsight.usageError:
     summary: 使い方の誤りを 1 回だけ報告し、終了コード 2 にする
     doc: usageError は、flag パッケージと同じく、誤ったコマンドラインを終了コード 2 で 1 回だけ報告する。urfave/cli はそれを表示したうえで、さらに返してもくる。
@@ -1097,15 +1166,11 @@ funcs:
   github.com/mpyw/pkgsight/internal/server.New:
     summary: グラフとアセットと注釈からサーバーを作る
     doc: New は g のサーバーを返す。/api と /mcp 以外のパスには assets を返し、注釈は store に保つ。version は MCP が名乗るバージョン。
-    fingerprint: 6bfdfde47dc051d2
+    fingerprint: afe28d1f853adee2
     lines:
-      - offset: 1
-        hash: 95cc2e5c
-        text: パッケージグラフは変わらないので、最初に一度だけ JSON にしておく
-      - offset: 5
-        hash: 02d74eb8
-        text: '`/api/source` が返してよいファイルの一覧。自分のパッケージのファイルだけ'
-        kind: important
+      - offset: 2
+        hash: 0dd39ab0
+        text: パッケージグラフの JSON と、返してよいソースの一覧を作る。コードが変わったときは `Reload` が同じことをやり直す
   github.com/mpyw/pkgsight/internal/server.frontend:
     summary: 埋め込んだ UI を配り、他のパスは index.html に回す
     doc: frontend は assets を配る。ファイルでないパスには index.html を返すので、アプリが作った URL は再読み込みしても残る。
@@ -1137,6 +1202,29 @@ funcs:
       - offset: 3
         hash: 5e35af49
         text: ヘッダーを送った後なので、書き込みの失敗は返す先がない
+  github.com/mpyw/pkgsight/internal/watch.Run:
+    summary: 指紋を定期的に取り、変化が落ち着いたら知らせる
+    doc: Run は ctx が終わるまで、interval ごとに snapshot を呼ぶ。指紋が前と違ったら、2 回続けて同じになるのを待ってから changed を呼ぶ。こうすると、何段階かに分けて書き込むエディタでも 1 回の変化になる。changed の最中に入った変更は、次の確認で気づく。
+    fingerprint: 0a0832e4c1d224ef
+    lines:
+      - offset: 15
+        hash: 5ad76f03
+        text: changed の前の指紋を残しておく。呼んでいる最中に入った編集は、次の確認で違いとして見つかる
+        kind: important
+  github.com/mpyw/pkgsight/internal/watch.Snapshot:
+    summary: Go のファイルの大きさと更新時刻から指紋を作る
+    doc: Snapshot は、root からの相対で与えた dirs と root 自身にある、Go のファイル、go.mod、go.sum、go.work の指紋を作る。どれかが変われば指紋も変わる。
+    fingerprint: c33efa0d262e5e6b
+    lines:
+      - offset: 9
+        hash: 099091b5
+        text: 消えたディレクトリも変化として数える
+      - offset: 20
+        hash: d10b36aa
+        text: 中身は読まない。大きさと更新時刻だけなので、ファイルが多くても安い
+  github.com/mpyw/pkgsight/internal/watch.watched:
+    summary: 見張るファイルか判定する。Go のファイルとモジュールの定義
+    fingerprint: ce8488dd63492e38
   github.com/mpyw/pkgsight/web.Dist:
     summary: 埋め込んだビルド済みフロントエンドを返す
     doc: Dist はビルド済みフロントエンドのファイルを返す。

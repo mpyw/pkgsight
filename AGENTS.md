@@ -11,6 +11,7 @@ pkgsight draws a Go module in the browser: a package map, the functions inside a
 | `internal/callgraph` | The call graph, from SSA with VTA, and the queries the API serves |
 | `internal/notes` | The notes store: one JSON file per language, and the placement of line notes |
 | `internal/freshness` | The fingerprint of a function or a package, and whether each note still matches its code |
+| `internal/watch` | Polls the module's Go files, and tells when they change |
 | `internal/server` | The HTTP API, the notes stream, image serving and the embedded UI |
 | `internal/mcpserver` | The MCP tools and prompts |
 | `internal/model` | The JSON shapes shared with the UI. `web/src/data/types.ts` mirrors them |
@@ -66,6 +67,13 @@ Use `encoding/json/v2`, never v1.
 - `/mcp` is wrapped in `http.CrossOriginProtection`. The SDK option `StreamableHTTPOptions.CrossOriginProtection` is deprecated. It is registered once per method, because a pattern without a method conflicts with `GET /`.
 - MCP tools answer in plain text, not JSON. A model reads it better.
 - Requests share the server context through `BaseContext`, so the notes stream ends on shutdown.
+
+### Watching the code
+
+- `internal/watch` polls file sizes and times. fsnotify was rejected. On macOS it holds a file descriptor for every watched file, and a large module runs out of them.
+- The watcher starts only after the first call graph is handed over, so a reload never lands before it.
+- `Server.Reload` swaps the package graph and the call graph under one lock, so no request sees one without the other. The MCP backend reads the package graph through a function for the same reason.
+- The frontend hands its views the data source under a new identity after a `code` event (`anew`). Every fetch lists the data source as a dependency, so all of them run again. Do not add a separate revision counter to effects: oxlint rejects dependencies an effect does not read.
 
 ### UI behavior that was asked for
 

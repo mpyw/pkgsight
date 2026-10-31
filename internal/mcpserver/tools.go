@@ -70,7 +70,8 @@ How to work:
 
 // Backend is what the tools read and write.
 type Backend struct {
-	Graph *model.Graph
+	// Graph returns the package graph. It changes when the code does.
+	Graph func() *model.Graph
 	Notes *notes.Store
 	// Calls returns the call graph, or nil while it is building, and why it
 	// failed if it did.
@@ -156,11 +157,11 @@ func (s *tools) needCalls() (*callgraph.Graph, error) {
 // code reads the module's code for fingerprints. g may be nil while the
 // call graph is building, which leaves only the doc comments readable.
 func (s *tools) code(g *callgraph.Graph) *freshness.Code {
-	return freshness.New(s.Graph, g, s.ReadSource)
+	return freshness.New(s.Graph(), g, s.ReadSource)
 }
 
 func (s *tools) ownPackage(path string) (model.Package, bool) {
-	for _, p := range s.Graph.Packages {
+	for _, p := range s.Graph().Packages {
 		if p.Path == path && p.Kind == model.KindOwn {
 			return p, true
 		}
@@ -180,7 +181,7 @@ func (s *tools) ownImports(p model.Package) []string {
 
 func (s *tools) importers(path string) []string {
 	var out []string
-	for _, p := range s.Graph.Packages {
+	for _, p := range s.Graph().Packages {
 		if p.Kind == model.KindOwn && slices.Contains(p.Imports, path) {
 			out = append(out, p.Path)
 		}
@@ -193,12 +194,12 @@ type overviewIn struct{}
 func (s *tools) overview(overviewIn) (string, error) {
 	var b strings.Builder
 	var mods []string
-	for _, m := range s.Graph.Modules {
+	for _, m := range s.Graph().Modules {
 		if m.Main {
 			mods = append(mods, m.Path)
 		}
 	}
-	fmt.Fprintf(&b, "Module: %s\nRoot: %s\n", strings.Join(mods, ", "), s.Graph.Root)
+	fmt.Fprintf(&b, "Module: %s\nRoot: %s\n", strings.Join(mods, ", "), s.Graph().Root)
 	langs := s.Notes.Langs()
 	if len(langs) == 0 {
 		b.WriteString("Notes: none yet\n")
@@ -215,7 +216,7 @@ func (s *tools) overview(overviewIn) (string, error) {
 		b.WriteString("\n")
 	}
 	b.WriteString("\nPackages:\n")
-	for _, p := range s.Graph.Packages {
+	for _, p := range s.Graph().Packages {
 		if p.Kind != model.KindOwn {
 			continue
 		}

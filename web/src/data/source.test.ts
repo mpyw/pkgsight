@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { HttpDataSource } from "./source";
+import { anew, HttpDataSource } from "./source";
+import { FakeSource, main } from "../test/fake";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -83,5 +84,67 @@ describe("HttpDataSource", () => {
     expect(changed).toHaveBeenCalledTimes(1);
     stop();
     expect(made[0].closed).toBe(true);
+  });
+
+  it("shares one stream, and reads files anew after the code changed", async () => {
+    const made: FakeEventSource[] = [];
+    class FakeEventSource extends EventTarget {
+      closed = false;
+      constructor(readonly url: string) {
+        super();
+        made.push(this);
+      }
+      close() {
+        this.closed = true;
+      }
+    }
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const fetched: string[] = [];
+    vi.stubGlobal("fetch", (url: string) => {
+      fetched.push(url);
+      return Promise.resolve(new Response("package a"));
+    });
+    const src = new HttpDataSource();
+    const notes = vi.fn();
+    const code = vi.fn();
+    const stopNotes = src.watchNotes(notes);
+    const stopCode = src.watchCode(code);
+    expect(made).toHaveLength(1);
+
+    await src.source("a.go");
+    await src.source("a.go");
+    expect(fetched).toHaveLength(1);
+    made[0].dispatchEvent(new Event("code"));
+    expect(code).toHaveBeenCalledTimes(1);
+    expect(notes).not.toHaveBeenCalled();
+    await src.source("a.go");
+    expect(fetched).toHaveLength(2);
+
+    stopNotes();
+    expect(made[0].closed).toBe(false);
+    stopCode();
+    expect(made[0].closed).toBe(true);
+    // Listening again opens a new stream.
+    src.watchCode(code)();
+    expect(made).toHaveLength(2);
+  });
+
+  it("reads through the same source under a new identity", async () => {
+    const base = new FakeSource();
+    const live = anew(base);
+    expect(live).not.toBe(base);
+    expect(await live.graph()).toBe(await base.graph());
+    expect((await live.entries()).length).toBe((await base.entries()).length);
+    await live.callStatus();
+    await live.func(main.id);
+    await live.packageFuncs(main.pkg);
+    await live.search("run");
+    await live.notes("ja");
+    await live.source(main.file!);
+    expect(live.asset("a.png")).toBe(base.asset("a.png"));
+    const changed = vi.fn();
+    live.watchNotes(changed)();
+    live.watchCode(changed)();
+    expect(base.funcCalls).toContain(main.id);
   });
 });

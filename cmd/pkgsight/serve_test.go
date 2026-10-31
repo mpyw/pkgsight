@@ -138,3 +138,71 @@ func TestServeWarnsOfSkippedPackages(t *testing.T) {
 	cancel()
 	<-done
 }
+
+// serveCopy serves a copy of the sample with args, and returns its URL, its
+// directory, its log and a function that stops it.
+func serveCopy(t *testing.T, args ...string) (string, string, *lockedBuffer, func()) {
+	t.Helper()
+	dir := t.TempDir()
+	if err := os.CopyFS(dir, os.DirFS(sample)); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	var stderr lockedBuffer
+	done := make(chan int)
+	go func() {
+		done <- pkgsight(ctx, io.Discard, &stderr, append([]string{"serve", "--open=false", "--addr", "127.0.0.1:0", "-C", dir}, args...)...)
+	}()
+	url := waitFor(t, &stderr, `serving on (http://[^,]+),`)
+	waitFor(t, &stderr, `built the call graph in`)
+	return url, dir, &stderr, func() { cancel(); <-done }
+}
+
+// servedStatus returns the HTTP status of GET url.
+func servedStatus(t *testing.T, url string) int {
+	t.Helper()
+	resp, err := http.Get(url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	return resp.StatusCode
+}
+
+func TestServeReloadsWhenTheCodeChanges(t *testing.T) {
+	url, dir, stderr, stop := serveCopy(t)
+	defer stop()
+	added := url + "/api/calls/func?id=example.com/sample/app.Added"
+	if got := servedStatus(t, added); got != http.StatusNotFound {
+		t.Fatalf("Added before it exists: %d", got)
+	}
+	f, err := os.OpenFile(filepath.Join(dir, "app", "app.go"), os.O_APPEND|os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.WriteString("\n// Added is new.\nfunc Added() {}\n"); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, stderr, `reloaded after a change`)
+	if got := servedStatus(t, added); got != http.StatusOK {
+		t.Errorf("Added after the reload: %d", got)
+	}
+}
+
+func TestServeWithoutWatching(t *testing.T) {
+	url, dir, stderr, stop := serveCopy(t, "--watch=false")
+	defer stop()
+	if err := os.WriteFile(filepath.Join(dir, "app", "more.go"), []byte("package app\n\nfunc More() {}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(1500 * time.Millisecond)
+	if strings.Contains(stderr.String(), "reloaded") {
+		t.Error("reloaded with --watch=false")
+	}
+	if got := servedStatus(t, url+"/api/calls/func?id=example.com/sample/app.More"); got != http.StatusNotFound {
+		t.Errorf("More without watching: %d", got)
+	}
+}

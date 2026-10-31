@@ -6,6 +6,8 @@ How pkgsight analyzes a module, what it shows, and how notes and MCP work. [AGEN
 
 `pkgsight serve` loads the package graph with `go list` first, so the map shows at once. The call graph is built after it, in the background.
 
+With `--watch`, on by default, `internal/watch` polls the Go files, `go.mod`, `go.sum` and `go.work` of the module's package directories twice a second. Once a change settles, the server builds both graphs again, swaps them in at once, and sends a `code` event on `/api/notes/events`. The frontend then fetches anew and keeps what is on screen. The old graphs serve requests until the new ones are ready.
+
 The call graph comes from SSA of the module's own packages. Dependencies are loaded for their types only. VTA resolves calls, and CHA fills in what VTA cannot see.
 
 | Call | Shown |
@@ -124,4 +126,4 @@ The server instructions in `internal/mcpserver/tools.go` tell the model how to w
 | `GET /api/source?file=` | A source file of the module's own packages |
 | `GET /api/asset?path=` | An image file under the root |
 | `GET /api/notes?lang=` | The notes of a language, with line notes placed and each note's `stale` flag |
-| `GET /api/notes/events` | A server-sent event each time a book of notes changes |
+| `GET /api/notes/events` | Server-sent events: `notes` when a book of notes changes, and `code` after the code was analyzed again |

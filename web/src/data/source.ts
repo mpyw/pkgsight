@@ -22,10 +22,18 @@ export interface DataSource {
   asset(path: string): string;
   // Calls back whenever the notes change, until the returned function runs.
   watchNotes(changed: () => void): () => void;
+  // Calls back whenever the server analyzed the code again.
+  watchCode(changed: () => void): () => void;
 }
 
 export class HttpDataSource implements DataSource {
   private sources = new Map<string, Promise<string>>();
+  // One stream carries both kinds of event, opened while anyone listens.
+  private events?: EventSource;
+  private listeners = {
+    notes: new Set<() => void>(),
+    code: new Set<() => void>(),
+  };
 
   graph = () => this.json<Graph>("/api/graph");
   callStatus = () => this.json<CallStatus>("/api/calls/status");
@@ -44,10 +52,30 @@ export class HttpDataSource implements DataSource {
 
   asset = (path: string) => `/api/asset?${new URLSearchParams({ path })}`;
 
-  watchNotes(changed: () => void): () => void {
-    const events = new EventSource("/api/notes/events");
-    events.addEventListener("notes", changed);
-    return () => events.close();
+  watchNotes = (changed: () => void) => this.listen("notes", changed);
+  watchCode = (changed: () => void) => this.listen("code", changed);
+
+  private listen(kind: "notes" | "code", changed: () => void): () => void {
+    if (!this.events) {
+      const events = new EventSource("/api/notes/events");
+      events.addEventListener("notes", () => {
+        for (const l of this.listeners.notes) l();
+      });
+      events.addEventListener("code", () => {
+        // The files may have changed, so read them again.
+        this.sources.clear();
+        for (const l of this.listeners.code) l();
+      });
+      this.events = events;
+    }
+    this.listeners[kind].add(changed);
+    return () => {
+      this.listeners[kind].delete(changed);
+      if (this.listeners.notes.size + this.listeners.code.size === 0) {
+        this.events?.close();
+        this.events = undefined;
+      }
+    };
   }
 
   source(file: string): Promise<string> {
@@ -73,4 +101,24 @@ export class HttpDataSource implements DataSource {
       throw new Error(`GET ${url}: ${res.status} ${await res.text()}`);
     return res;
   }
+}
+
+// anew reads through source under a new identity. Whatever fetches from a
+// data source lists it among its dependencies, so handing over anew(source)
+// after the server analyzed the code again makes every view fetch anew,
+// while what is on screen stays.
+export function anew(source: DataSource): DataSource {
+  return {
+    graph: () => source.graph(),
+    callStatus: () => source.callStatus(),
+    entries: () => source.entries(),
+    func: (id) => source.func(id),
+    packageFuncs: (path) => source.packageFuncs(path),
+    search: (q) => source.search(q),
+    source: (file) => source.source(file),
+    notes: (lang) => source.notes(lang),
+    asset: (path) => source.asset(path),
+    watchNotes: (changed) => source.watchNotes(changed),
+    watchCode: (changed) => source.watchCode(changed),
+  };
 }
