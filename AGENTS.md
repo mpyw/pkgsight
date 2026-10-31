@@ -35,7 +35,7 @@ The price is calls that pass through dependencies. In `cmd/go`, 811 calls betwee
 Two repairs make up for the lost edges. Keep both.
 
 - An interface call that VTA leaves unresolved gets the CHA callees, marked `Maybe`. The UI draws them as guesses.
-- An own function handed to a library function becomes a call, with `Through` naming that function. `sync.WaitGroup.Go` and `errgroup.Group.Go` count as `go` calls, through the `spawners` map. A generic library function is named by its origin, so type arguments do not leak into the UI.
+- An own function handed to a library function becomes a call, with `Through` naming that function. So does a function literal handed to the module's own function or interface method. VTA follows that one, but from the helper, which calls back every literal any caller hands it. FridgeChat's `StartMembership` reached its literal six calls down, among nine others. `sync.WaitGroup.Go` and `errgroup.Group.Go` count as `go` calls, through the `spawners` map. A generic library function is named by its origin, so type arguments do not leak into the UI.
 
 ### Go only
 

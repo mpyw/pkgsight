@@ -16,10 +16,11 @@ The call graph comes from SSA of the module's own packages. Dependencies are loa
 | Through an interface, the value made in the module | Yes, to each type it can hold |
 | Through an interface, the value from a dependency | As a guess (`Maybe`), drawn dotted |
 | A function of the module handed to a library function | Yes, with `Through` naming the library function |
+| A function literal handed to the module's own function or interface | Yes, from the caller too, with `Through` naming what it was handed to |
 | Made inside a dependency | No |
 | Through reflection | No |
 
-A function handed to `sync.WaitGroup.Go` or `errgroup.Group.Go` is a `go` call. A guess is listed among the caller's calls, but the callee does not list the caller. Otherwise every type with a `Write` or an `Error` method would list every caller of the interface. A call the compiler wrote, such as the yield of a range over a function, has no line. The body of such a loop is a function the compiler wrote too. Its calls belong to the function that holds the loop.
+A function handed to `sync.WaitGroup.Go` or `errgroup.Group.Go` is a `go` call. A helper that calls back what it is handed, such as a unit of work, calls back every literal any caller hands it. VTA cannot tell them apart. So the literal is drawn under the caller that wrote it, too. A named function handed to the module's own code is left to VTA. A guess is listed among the caller's calls, but the callee does not list the caller. Otherwise every type with a `Write` or an `Error` method would list every caller of the interface. A call the compiler wrote, such as the yield of a range over a function, has no line. The body of such a loop is a function the compiler wrote too. Its calls belong to the function that holds the loop.
 
 An entry point is where a reader may start a call flow.
 

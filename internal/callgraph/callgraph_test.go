@@ -168,6 +168,16 @@ func TestEdges(t *testing.T) {
 		// A call in the body of a loop over a function is the caller's,
 		// however deep the loops nest.
 		{"Loop", []string{"static Values std", "static inLoop own"}},
+		// A literal handed to the module's own code is called by the caller
+		// too, through what it was handed to. A named function is not: the
+		// analysis follows it to where it is called.
+		{"Handed", []string{
+			"dynamic Handed$1 own through edges.run",
+			"static run own",
+			"interface (runner).Decide own maybe",
+			"dynamic Handed$2 own through edges.(decider).Decide",
+			"static (runner).Decide own",
+		}},
 		// A generic library function is named by its origin.
 		{"Sorted", []string{
 			"dynamic less own through slices.SortFunc",
@@ -296,7 +306,7 @@ func TestEntriesFromLibraries(t *testing.T) {
 		"interface (echo).Shout",
 		"uncalled Bound",
 		"uncalled Generic",
-		"uncalled Guess",
+		"uncalled Guess", "uncalled Handed",
 		"uncalled Loop",
 		"uncalled Promoted",
 		"uncalled Sealed",

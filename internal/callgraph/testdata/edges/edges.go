@@ -148,3 +148,27 @@ func Loop() {
 }
 
 func inLoop() {}
+
+// decider calls back what it is handed, as a unit of work does. The
+// literal handed to it is wrapped to become a Decision.
+type decider interface{ Decide(f Decision) int }
+
+type Decision func() int
+
+type runner struct{}
+
+func (runner) Decide(f Decision) int { return f() }
+
+func run(f func() int) int { return f() }
+
+// Handed hands function literals to the module's own function and
+// interface, and a named function to its own function.
+func Handed(d decider) int {
+	a := run(func() int { return picked() })
+	b := d.Decide(func() int { return picked() })
+	return a + b + run(named) + runner{}.Decide(named)
+}
+
+func picked() int { return 1 }
+
+func named() int { return 2 }

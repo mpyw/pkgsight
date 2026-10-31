@@ -371,41 +371,62 @@ var spawners = map[string]bool{
 // recordCallbacks records an own function handed to a library function as a
 // call to it. The library makes the call, and the analysis does not read the
 // library, so the edge would be missing otherwise.
+//
+// A function literal handed to the module's own function or method is
+// recorded too. The analysis does see that call, but from the callee's side,
+// and with no context: a helper that calls back what it is handed calls back
+// every literal any caller hands it, often several layers down. The literal
+// is the caller's code, so its calls are read best under the caller.
 func (b *builder) recordCallbacks(calls map[callKey]*model.Call, site ssa.CallInstruction) {
 	common := site.Common()
-	callee := common.StaticCallee()
-	// An instance of the module's own generic function is synthetic, so it
-	// passes too. That is right: the analysis does not see into the generic
-	// body either, so the instance calls the function out of sight, as a
-	// library would.
-	if callee == nil || b.isOwn(callee) {
+	through, mode, library := b.handedTo(common)
+	if through == "" {
 		return
 	}
-	// Name a generic function by its origin: the type arguments are noise here.
+	for _, arg := range common.Args {
+		fn := funcOf(arg)
+		// A named function handed to the module's own code is left to VTA,
+		// which follows it to where it is called.
+		if fn != nil && b.isOwn(fn) && (library || fn.Parent() != nil) {
+			b.record(calls, site, fn, model.Call{Mode: mode, Dispatch: model.DispatchDynamic, Through: through})
+		}
+	}
+}
+
+// handedTo names the function or interface method a call at common hands
+// its arguments to, tells how that one calls them, and reports whether it is
+// outside the module. The name is empty for a call of a function value.
+func (b *builder) handedTo(common *ssa.CallCommon) (string, model.Mode, bool) {
+	if common.IsInvoke() {
+		m := common.Method
+		recv := types.TypeString(common.Value.Type(), func(p *types.Package) string { return p.Name() })
+		if n, ok := types.Unalias(common.Value.Type()).(*types.Named); ok && n.Obj().Pkg() != nil {
+			recv = n.Obj().Pkg().Name() + ".(" + n.Obj().Name() + ")"
+		}
+		return recv + "." + m.Name(), model.ModeCall, m.Pkg() == nil || !b.own[m.Pkg().Path()]
+	}
+	callee := common.StaticCallee()
+	if callee == nil {
+		return "", model.ModeCall, false
+	}
+	// An instance of the module's own generic function is synthetic, so it
+	// counts as a library. That is right: the analysis does not see into the
+	// generic body either, so the instance calls the function out of sight,
+	// as a library would. Name it by its origin: the type arguments are
+	// noise here.
 	named := callee
 	if o := callee.Origin(); o != nil {
 		named = o
 	}
-	through := named.String()
 	mode := model.ModeCall
-	if spawners[through] {
+	if spawners[named.String()] {
 		mode = model.ModeGo
 	}
+	through := named.String()
 	if pkg := named.Package(); pkg != nil {
 		through = pkg.Pkg.Name() + "." + named.RelString(pkg.Pkg)
 	}
-	for _, arg := range common.Args {
-		var fn *ssa.Function
-		switch v := arg.(type) {
-		case *ssa.MakeClosure:
-			fn, _ = v.Fn.(*ssa.Function)
-		case *ssa.Function:
-			fn = v
-		}
-		if fn != nil && b.isOwn(fn) {
-			b.record(calls, site, fn, model.Call{Mode: mode, Dispatch: model.DispatchDynamic, Through: through})
-		}
-	}
+	return through, mode, !b.isOwn(callee)
 }
 
 // withLoopBodies returns fn and the bodies of its loops over a function,

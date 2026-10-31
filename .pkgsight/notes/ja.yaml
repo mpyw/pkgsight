@@ -32,11 +32,11 @@ packages:
       依存パッケージはソースを読まず、型情報だけを読む（浅い解析）。全部を読むと cmd/go で 1.17 GB、浅い解析なら 180 MB だった。その代わり、依存パッケージを通る値は VTA で追えなくなり、cmd/go では自前の関数同士の呼び出しが 811 本見えなくなった（うち 724 本は `error` 経由）。これを 2 つの仕組みで補う。
 
       - VTA で呼び出し先が見つからない interface 呼び出しは、CHA で候補を挙げ、「推測」の印（`Maybe`）を付ける。
-      - ライブラリに渡した自前の関数は、ライブラリが呼ぶものとして、`Through` 付きで記録する。
+      - ライブラリに渡した自前の関数は、ライブラリが呼ぶものとして、`Through` 付きで記録する。自前のヘルパーに渡した関数リテラルも、渡した側から `Through` 付きで呼ぶものとする。ヘルパーの側からだと、どの呼び出し元が渡したリテラルも区別できないため。
 
       > [!WARNING]
       > 関数 ID（`builder.id`）は注釈の保存キー。形式を変えると、保存済みの注釈がすべて行き場を失う。
-    fingerprint: 7c843503b65a13d9
+    fingerprint: 0819df1720a940c1
   github.com/mpyw/pkgsight/internal/freshness:
     summary: 注釈がまだ今のコードを説明しているか判定する
     doc: |-
@@ -219,6 +219,25 @@ funcs:
       - offset: 27
         hash: 99895d14
         text: '`DocLine` は doc コメントの先頭行。注釈の行ノートを doc コメントにも付けられるのはこのため'
+  (*github.com/mpyw/pkgsight/internal/callgraph.builder).handedTo:
+    summary: 引数を渡す先の関数やメソッドを名付け、呼び方とライブラリかどうかを返す
+    doc: handedTo は、common の呼び出しが引数を渡す先の関数か interface メソッドを名付け、それが引数をどう呼ぶかを伝え、モジュールの外かどうかを報告する。関数値の呼び出しでは名前が空になる。
+    body: 名前は UI の「via」タグと注釈パネルにそのまま出るので、`パッケージ名.(型).メソッド` の形にそろえる。`errgroup.(*Group).Go`、`usecase.(Store).Write`、`usecase.(*Service).membershipWrite` のように、完全なインポートパスは出さない。
+    fingerprint: 74dab7b16e2f1dbe
+    lines:
+      - offset: 1
+        hash: 28edb304
+        text: interface 呼び出しは呼び出し先が決まらないので、interface のメソッドで名付ける。そのメソッドが自前のパッケージのものなら、ライブラリではない
+      - offset: 13
+        hash: a165c808
+        text: 自前のジェネリック関数のインスタンスは合成関数なので isOwn を通らず、ライブラリ扱いになる。解析はジェネリックの本体も見られないので、それで正しい
+        kind: important
+      - offset: 18
+        hash: b15d14da
+        text: ジェネリック関数はインスタンスではなく元の関数で名付ける。型引数が UI に漏れないように
+      - offset: 23
+        hash: f8bcaa2a
+        text: '`WaitGroup.Go` と errgroup の `Go`/`TryGo` に渡した関数は goroutine で走るので、`go` の呼び出しにする'
   (*github.com/mpyw/pkgsight/internal/callgraph.builder).id:
     summary: 関数に、一意な ID を割り当てる
     body: ID は `fn.String()` で、注釈の保存キーにもなる。ここを変えると保存済みの注釈がすべて行き場を失うので、ファイル形式の変更として扱う（AGENTS.md）。
@@ -293,24 +312,35 @@ funcs:
         text: コンパイラが書いた呼び出し（range-over-func の yield など）は位置を持たず、行が 0 になる。その場合 `Lines` は空のまま
         kind: note
   (*github.com/mpyw/pkgsight/internal/callgraph.builder).recordCallbacks:
-    summary: ライブラリに渡した自前の関数を、呼び出しの辺として記録する
-    doc: recordCallbacks は、ライブラリ関数に渡したモジュールの関数を、その関数への呼び出しとして記録する。呼び出すのはライブラリで、解析はライブラリを読まないので、そうしなければ辺が失われる。
-    body: 浅い解析（依存先は型情報のみ）の代償を埋める 2 つの補修のひとつ。`wg.Go(func(){...})` や `slices.SortFunc(xs, less)` の辺はこれがないと見えない。AGENTS.md で「両方残す」と決めている。
-    fingerprint: f848b1957e099a30
+    summary: 関数を渡した呼び出しを、渡した側からその関数への呼び出しとして記録する
+    doc: |-
+      recordCallbacks は、ライブラリ関数に渡したモジュールの関数を、その関数への呼び出しとして記録する。呼び出すのはライブラリで、解析はライブラリを読まないので、そうしなければ辺が失われる。
+
+      モジュール自身の関数やメソッドに渡した関数リテラルも記録する。この呼び出しは解析にも見えているが、受け取った側からで、文脈がない。渡されたものを呼び返すヘルパーは、どの呼び出し元が渡したリテラルも全部呼び返すように見え、しかも何段も下にあることが多い。リテラルは呼び出し元のコードなので、その中の呼び出しは呼び出し元の下で読むのがいちばん分かりやすい。
+    body: |-
+      浅い解析（依存先は型情報のみ）の代償を埋める 2 つの補修のひとつ。`wg.Go(func(){...})` や `slices.SortFunc(xs, less)` の辺はこれがないと見えない。CLAUDE.md で「両方残す」と決めている。
+
+      自前のヘルパーに渡したリテラルも拾うのは、FridgeChat で次の形が追えなかったから。
+
+      ```go
+      err = s.membershipWrite(ctx, fridgeID, func(snap *domain.Snapshot) (domain.Changes, error) {
+      	return domain.StartMembership(snap, ...)
+      })
+      ```
+
+      VTA だけだと `StartMembership → membershipWrite → Store.Write → Store.Do → Store.Write$1 → membershipWrite$1 → StartMembership$1` と 6 段下で、しかも途中で 5 つ、9 つに分かれていた。今は `StartMembership → StartMembership$1 (via membershipWrite)` と直接つながる。
+    fingerprint: 8a654fde8fc0268d
     lines:
+      - offset: 2
+        hash: 981fb25c
+        text: 渡し先の名前、呼び方（go かどうか）、ライブラリかどうかは handedTo が決める。関数値の呼び出しは渡し先の名前がないので対象外
       - offset: 7
-        hash: 3f7fdbff
-        text: 自前のジェネリック関数のインスタンスもここを通る。解析はジェネリックの本体の中も見られないので、ライブラリと同じく「via」付きの辺にするのが正しい
+        hash: c4919fcb
+        text: クロージャは `MakeClosure`、名前付きの関数型（`usecase.Decide` など）にしたものは `ChangeType` に包まれて渡る。funcOf がどちらも剥がす
+      - offset: 10
+        hash: 9d33b40d
+        text: 自前のコードに渡した名前付き関数は VTA に任せる。辺を足すのは、ライブラリに渡したものと、その場で書いたリテラル（Parent がある関数）だけ
         kind: important
-      - offset: 12
-        hash: f515938a
-        text: ジェネリック関数はインスタンスではなく元の関数で名付ける。型引数が UI に漏れないように
-      - offset: 17
-        hash: e60ad27f
-        text: '`WaitGroup.Go` と errgroup の `Go`/`TryGo` に渡した関数は goroutine で走るので、`go` の呼び出しとして扱う'
-      - offset: 26
-        hash: f3fc0e13
-        text: クロージャは `MakeClosure` として渡る。その中の関数を取り出す
   (*github.com/mpyw/pkgsight/internal/callgraph.builder).unwrap:
     summary: 自動で作られるラッパー関数を飛ばして、実体の関数に辿る
     doc: unwrap は、束縛メソッド、メソッド値、昇格メソッドのために SSA が合成するラッパーを透過して、ソースが名指ししている関数まで辿る。

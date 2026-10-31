@@ -103,8 +103,9 @@ type Call struct {
 	// Maybe marks a callee that only the class hierarchy suggests: the value
 	// reaches the call through code the analysis did not read.
 	Maybe bool `json:"maybe,omitzero"`
-	// Through names the library function the callee was handed to, such as
-	// "sync.(*WaitGroup).Go". That function makes the call, out of sight.
+	// Through names the function or interface method the callee was handed
+	// to, such as "sync.(*WaitGroup).Go". That one makes the call: out of
+	// sight in a library, or under every caller alike in the module.
 	Through string `json:"through,omitempty"`
 }
 
