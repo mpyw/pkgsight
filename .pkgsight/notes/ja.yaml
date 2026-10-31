@@ -36,7 +36,7 @@ packages:
 
       > [!WARNING]
       > 関数 ID（`builder.id`）は注釈の保存キー。形式を変えると、保存済みの注釈がすべて行き場を失う。
-    fingerprint: e4606d0900cb1f20
+    fingerprint: aeb0b36a13f050c7
   github.com/mpyw/pkgsight/internal/freshness:
     summary: 注釈がまだ今のコードを説明しているか判定する
     doc: |-
@@ -146,7 +146,7 @@ funcs:
       3. 呼び出し元と入口を決める。
 
       推測（`Maybe`）の辺は、呼び出し先の「呼び出し元」に数えない。数えると、`Write` や `Error` を持つすべての型に無関係な呼び出し元が並び、どれも入口にならなくなる（AGENTS.md）。
-    fingerprint: c15a586ee180dc00
+    fingerprint: 87eb9492afa86a07
     lines:
       - offset: 8
         hash: 2d89858f
@@ -162,7 +162,7 @@ funcs:
         hash: 3f39b379
         text: 推測の辺は呼び出し元に数えない。Write や Error を持つ全部の型に呼び出し元が並んでしまうため
         kind: important
-      - offset: 78
+      - offset: 83
         hash: f6aa93f5
         text: 入口は main と、モジュール内の誰からも呼ばれない公開関数。メソッドとクロージャは入口にしない
   (*github.com/mpyw/pkgsight/internal/callgraph.builder).build$2:
@@ -178,8 +178,12 @@ funcs:
         text: calls はマップなので、キーのすべての項目でタイブレークしないと並び順が実行ごとに変わる
         kind: important
   (*github.com/mpyw/pkgsight/internal/callgraph.builder).build$4:
-    summary: 入口を main 優先、次に名前順に並べる比較関数
-    fingerprint: 94700004db9a568e
+    summary: 入口を、種類の順、次に名前の順に並べる
+    fingerprint: 6c6664b3d1653c07
+    lines:
+      - offset: 3
+        hash: 64c093c8
+        text: 種類の順は entryRank が決める。プログラム、ライブラリが呼ぶもの、どこからも呼ばれないもの
   (*github.com/mpyw/pkgsight/internal/callgraph.builder).describe:
     summary: 解析した関数を、画面に送る Func に変換する
     body: モジュール外の関数は名前とパッケージだけを返す。自前の関数はファイル・行範囲・doc の 1 文目・doc コメントの開始行も埋める。
@@ -214,6 +218,40 @@ funcs:
       - offset: 1
         hash: 6d552bac
         text: '`own` は `Build` に渡したパターンで読み込んだパッケージの集合。依存先は型情報しか読んでいないので入らない'
+  (*github.com/mpyw/pkgsight/internal/callgraph.builder).libraryEntries:
+    summary: ライブラリから呼ばれる自前の関数とメソッドを見つける
+    doc: libraryEntries は、モジュールのコードからは見えないところで、別のモジュールが呼ぶ自前の名前付き関数とメソッドを見つける。別のモジュールの構造体のフィールドに入れたものと、別のモジュールの interface が求めるもの。そのうち、モジュール内のどこからも呼ばれないものを呼び出し側が残す。
+    body: |-
+      ライブラリに引数で渡した関数（`http.HandleFunc(h)` など）は、`recordCallbacks` が渡した側からの呼び出しとして記録するので、Call flow でたどれる。ここで拾うのは、それでもたどれないものだけ。
+
+      | 形 | 例 | 種類 |
+      | --- | --- | --- |
+      | 別モジュールの構造体のフィールドに入れる | `&analysis.Analyzer{Run: run}`、`Action: serveAction` | `handed` |
+      | 別モジュールの関数型にして、その interface として渡す | `http.HandlerFunc(serve)` | `handed` |
+      | 自前の型を別モジュールの interface に変換する | `ServeHTTP` | `interface` |
+    fingerprint: 3bc1cb246eaf47aa
+    lines:
+      - offset: 9
+        hash: a22e7db4
+        text: 自前の構造体に入れた関数は、モジュール内から呼ばれるので対象外
+      - offset: 22
+        hash: b048c4cc
+        text: 関数を別モジュールの関数型にしてから interface にする形。型変換は ChangeType 命令になるので funcOf が見通す
+      - offset: 31
+        hash: ab73fbb9
+        text: String と Error はほとんどの型が満たすので、入口にしない。入れると読む価値のある入口が埋もれる
+        kind: note
+      - offset: 39
+        hash: 945f384c
+        text: 構造体に入れたもの（handed）を優先する。同じ関数が両方に当たっても、より具体的な理由を残す
+  (*github.com/mpyw/pkgsight/internal/callgraph.builder).ownType:
+    summary: 型が、モジュール自身の名前付き型か判定する
+    doc: ownType は、t、または t が指す先が、モジュールの名前付き型かどうかを報告する。
+    fingerprint: 055e1d2d5fe8c8ff
+    lines:
+      - offset: 4
+        hash: f81a20f8
+        text: 型エイリアスは実体の型に戻してから判定する
   (*github.com/mpyw/pkgsight/internal/callgraph.builder).record:
     summary: 呼び出しを 1 件記録し、同じ相手・同じ方法の呼び出しを束ねる
     doc: record は、site での callee への呼び出しを calls に加える。同じ相手への同じ方法の呼び出しとはひとつにまとめる。
@@ -791,7 +829,7 @@ funcs:
     summary: パッケージを読み込み、コールグラフを作る入口
     doc: Build は dir で patterns を読み込み、そのコールグラフを作る。
     body: 依存パッケージはソースを読まず、型情報だけを読む（`packages.LoadSyntax`）。全部を読む方式はメモリが約 6 倍（cmd/go で 1.17 GB 対 180 MB）だったので採らなかった。その代わり依存パッケージを通る呼び出しが見えなくなるので、`build` の推測と `recordCallbacks` で補っている。用語はパッケージの注釈を参照。
-    fingerprint: 1278ea2a12f64a64
+    fingerprint: 455b577b8623d179
     lines:
       - offset: 7
         hash: 576135d8
@@ -838,6 +876,15 @@ funcs:
     summary: 行番号のリストの先頭を返す。空なら 0
     body: 位置を持たない呼び出しは行が空なので、並べ替えでは先頭（0）に来る。
     fingerprint: 1fa86495c7151170
+  github.com/mpyw/pkgsight/internal/callgraph.funcOf:
+    summary: 値が指す関数、またはクロージャの中身の関数を返す
+    doc: funcOf は、値そのものの関数、またはその値が閉じ込めている関数を返す。cli.ActionFunc のような名前付きの関数型を与えられた関数は、ChangeType に包まれている。
+    fingerprint: a1196c930a0506ae
+    lines:
+      - offset: 7
+        hash: bf106def
+        text: 名前付きの関数型への代入は型変換の命令になる。中身をたどらないと urfave/cli の Action が見つからない
+        kind: important
   github.com/mpyw/pkgsight/internal/freshness.New:
     summary: 注釈が対象とするコードの読み手を作る
     doc: New は、g と calls のコードを read を通して読む。read はルートからのスラッシュ区切りのパスを受け取る。

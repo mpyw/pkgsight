@@ -2,7 +2,10 @@
 package edges
 
 import (
+	"fmt"
 	"io"
+	"net"
+	"net/http"
 	"os"
 	"slices"
 )
@@ -63,3 +66,34 @@ func Twice() {
 	cleanup()
 	defer cleanup()
 }
+
+func onConn(net.Conn, http.ConnState) {}
+
+func serve(http.ResponseWriter, *http.Request) {}
+
+func direct(net.Conn, http.ConnState) {}
+
+// app is an http.Handler, and a fmt.Stringer.
+type app struct{}
+
+func (app) ServeHTTP(http.ResponseWriter, *http.Request) {}
+
+func (app) String() string { return "app" }
+
+// Server hands functions and a handler to the standard library, which
+// calls them out of sight.
+func Server() *http.Server {
+	direct(nil, 0)
+	var s fmt.Stringer = app{}
+	_ = s
+	http.Handle("/app", app{})
+	return &http.Server{
+		ConnState:   onConn,
+		Handler:     http.HandlerFunc(serve),
+		ConnContext: nil,
+	}
+}
+
+// Direct is also stored in a field, but the module calls it, so it is no
+// entry.
+var Direct = &http.Server{ConnState: direct}

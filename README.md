@@ -98,7 +98,7 @@ Double-click a package to see the functions inside it and the calls between them
 
 ### Call flow
 
-Start from a `main` function in the sidebar, or search for any function. Click a function to open its calls, and use the badge on its right edge to close them again.
+Start from the sidebar. It lists the `main` functions, and the functions a library calls, such as a command's action or `ServeHTTP`. You can also search for any function. Click a function to open its calls, and use the badge on its right edge to close them again.
 
 Some calls cannot be seen. Calls made inside dependencies and calls through reflection are missing. An interface call on a value from a dependency is a guess, drawn dotted.
 

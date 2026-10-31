@@ -31,6 +31,27 @@ interface Props {
 }
 
 const nodeTypes = { func: FuncNode };
+
+// The sidebar's places to start, in order.
+const entrySections: { reason: Entry["reason"]; title: string; tip: string }[] =
+  [
+    { reason: "main", title: "Programs", tip: "The main functions" },
+    {
+      reason: "handed",
+      title: "Handed to libraries",
+      tip: "Functions stored in a library's struct, such as a command's Action, that the library calls",
+    },
+    {
+      reason: "interface",
+      title: "Called through interfaces",
+      tip: "Methods that an interface of a library requires, such as ServeHTTP",
+    },
+    {
+      reason: "uncalled",
+      title: "Called from outside",
+      tip: "Exported functions that no code in the module calls",
+    },
+  ];
 const edgeTypes = { flow: FlowEdge };
 
 export function FlowView(props: Props) {
@@ -355,8 +376,6 @@ function Sidebar({
     </li>
   );
 
-  const mains = entries.filter((e) => e.reason === "main");
-  const uncalled = entries.filter((e) => e.reason === "uncalled");
   return (
     <aside className="sidebar">
       <input
@@ -404,18 +423,17 @@ function Sidebar({
         </section>
       ) : (
         <>
-          <section>
-            <h3>Programs</h3>
-            <ul>{mains.map((f) => item(f, f.pkg))}</ul>
-          </section>
-          {uncalled.length > 0 && (
-            <section>
-              <h3 title="Exported functions that no code in the module calls">
-                Called from outside
-              </h3>
-              <ul>{uncalled.map((f) => item(f, f.pkg))}</ul>
-            </section>
-          )}
+          {entrySections.map(({ reason, title, tip }) => {
+            const list = entries.filter((e) => e.reason === reason);
+            // Programs always shows, so an empty list says there are none.
+            if (list.length === 0 && reason !== "main") return null;
+            return (
+              <section key={reason}>
+                <h3 title={tip}>{title}</h3>
+                <ul>{list.map((f) => item(f, f.pkg))}</ul>
+              </section>
+            );
+          })}
         </>
       )}
     </aside>

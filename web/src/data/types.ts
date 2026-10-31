@@ -62,7 +62,10 @@ export interface FuncDetail extends Func {
 }
 
 export interface Entry extends Func {
-  reason: "main" | "uncalled";
+  // Why a reader may start here: a program, a function a library calls, a
+  // method a library's interface requires, or an exported function that
+  // nothing in the module calls.
+  reason: "main" | "handed" | "interface" | "uncalled";
 }
 
 export interface CallStatus {

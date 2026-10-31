@@ -264,3 +264,32 @@ func TestResultsAreCopies(t *testing.T) {
 		t.Errorf("changing a result changed the graph: %+v", again)
 	}
 }
+
+func TestEntriesFromLibraries(t *testing.T) {
+	g, err := callgraph.Build(context.Background(), "testdata/edges", "./...")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, e := range g.Entries() {
+		got = append(got, string(e.Reason)+" "+e.Name)
+	}
+	want := []string{
+		// A field of a library's struct, and a function made its handler.
+		"handed onConn",
+		"handed serve",
+		// A method an interface of the standard library requires. String
+		// is left out, and so is direct, which the module calls.
+		"interface (app).ServeHTTP",
+		"uncalled Bound",
+		"uncalled Generic",
+		"uncalled Guess",
+		"uncalled Promoted",
+		"uncalled Server",
+		"uncalled Sorted",
+		"uncalled Twice",
+	}
+	if !equal(got, want) {
+		t.Errorf("Entries() = %q, want %q", got, want)
+	}
+}

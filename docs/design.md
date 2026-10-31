@@ -19,7 +19,16 @@ The call graph comes from SSA of the module's own packages. Dependencies are loa
 
 A function handed to `sync.WaitGroup.Go` or `errgroup.Group.Go` is a `go` call. A guess is listed among the caller's calls, but the callee does not list the caller. Otherwise every type with a `Write` or an `Error` method would list every caller of the interface. A call the compiler wrote, such as the yield of a range over a function, has no line.
 
-An entry point is a `main` function, or an exported function that nothing in the module calls. A function that only a library calls, such as an HTTP handler, is not one.
+An entry point is where a reader may start a call flow.
+
+| Kind | What it is | Example |
+| --- | --- | --- |
+| `main` | A `main` function | `main` |
+| `handed` | A function stored in a field of another module's struct, or made one of its function types and handed over as its interface. Nothing in the module calls it | `&analysis.Analyzer{Run: run}`, `Action: serveAction`, `http.HandlerFunc(serve)` |
+| `interface` | A method that an interface of another module requires, from a type the module converts to it. Nothing in the module calls it | `ServeHTTP` |
+| `uncalled` | An exported function that nothing in the module calls | A library's API |
+
+`String` and `Error` never make an `interface` entry. Nearly every type has them. A function handed to a library as an argument, as with `http.HandleFunc`, is no entry: the call flow reaches it from the caller, through the library.
 
 ## Views
 

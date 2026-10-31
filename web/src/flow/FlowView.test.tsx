@@ -42,6 +42,15 @@ describe("FlowView sidebar", () => {
     await waitFor(() => expect(screen.getByText("Programs")).toBeTruthy());
     expect(screen.getByText("Call graph built in 1.2s")).toBeTruthy();
     expect(await screen.findByText("Called from outside")).toBeTruthy();
+    // Every kind of entry has its section, in order.
+    expect(
+      [...document.querySelectorAll(".sidebar h3")].map((h) => h.textContent),
+    ).toEqual([
+      "Programs",
+      "Handed to libraries",
+      "Called through interfaces",
+      "Called from outside",
+    ]);
     // An entry with a note shows its summary instead of its package.
     expect(screen.getByText("入口")).toBeTruthy();
     fireEvent.click(screen.getByTitle(main.id));

@@ -214,6 +214,8 @@ export const sources: Record<string, string> = {
 
 export const entries: Entry[] = [
   { ...main, reason: "main" },
+  { ...serve, reason: "interface" },
+  { ...loop, reason: "handed" },
   { ...run, reason: "uncalled" },
 ];
 

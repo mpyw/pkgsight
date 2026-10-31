@@ -14,6 +14,7 @@ import (
 	"go/ast"
 	"go/doc"
 	"go/token"
+	"go/types"
 	"os"
 	"path/filepath"
 	"slices"
@@ -79,6 +80,7 @@ func Build(ctx context.Context, dir string, patterns ...string) (*Graph, error) 
 		taken: map[string]bool{},
 		vta:   vta.CallGraph(ssautil.AllFunctions(prog), hierarchy),
 		cha:   hierarchy,
+		prog:  prog,
 	}
 	g := b.build()
 	g.skipped = skipped
@@ -93,6 +95,7 @@ type builder struct {
 	taken map[string]bool
 	vta   *callgraph.Graph
 	cha   *callgraph.Graph
+	prog  *ssa.Program
 }
 
 func (b *builder) isOwn(fn *ssa.Function) bool {
@@ -178,8 +181,13 @@ func (b *builder) build() *Graph {
 		})
 	}
 
+	fromLibraries := b.libraryEntries(owned)
 	for _, fn := range owned {
 		d := g.funcs[b.id(fn)]
+		if reason, ok := fromLibraries[fn]; ok && len(d.Callers) == 0 {
+			g.entries = append(g.entries, model.Entry{Func: d.Func, Reason: reason})
+			continue
+		}
 		switch {
 		case fn.Parent() != nil || fn.Signature.Recv() != nil:
 		case fn.Name() == "main" && fn.Pkg.Pkg.Name() == "main":
@@ -190,12 +198,105 @@ func (b *builder) build() *Graph {
 	}
 	sort.SliceStable(g.entries, func(i, j int) bool {
 		a, b := g.entries[i], g.entries[j]
-		if a.Reason != b.Reason {
-			return a.Reason == model.EntryMain
-		}
-		return a.Pkg+"."+a.Name < b.Pkg+"."+b.Name
+		return cmp.Or(
+			cmp.Compare(entryRank[a.Reason], entryRank[b.Reason]),
+			cmp.Compare(a.Pkg+"."+a.Name, b.Pkg+"."+b.Name),
+		) < 0
 	})
 	return g
+}
+
+// entryRank orders entries: programs first, then what libraries call, then
+// what nothing calls.
+var entryRank = map[model.EntryReason]int{
+	model.EntryMain:      0,
+	model.EntryHanded:    1,
+	model.EntryInterface: 2,
+	model.EntryUncalled:  3,
+}
+
+// commonMethods are required by interfaces nearly every type meets. As
+// entries they would bury the ones worth reading.
+var commonMethods = map[string]bool{"String": true, "Error": true}
+
+// libraryEntries finds the named functions and methods of the module that
+// another module calls without the module's code in sight: those stored in
+// a field of a struct of another module, and those an interface of another
+// module requires. The caller keeps those that nothing in the module calls.
+func (b *builder) libraryEntries(owned []*ssa.Function) map[*ssa.Function]model.EntryReason {
+	out := map[*ssa.Function]model.EntryReason{}
+	named := func(fn *ssa.Function) bool { return fn != nil && b.isOwn(fn) && fn.Parent() == nil }
+	for _, fn := range owned {
+		for _, blk := range fn.Blocks {
+			for _, instr := range blk.Instrs {
+				switch v := instr.(type) {
+				case *ssa.Store:
+					field, ok := v.Addr.(*ssa.FieldAddr)
+					if !ok || b.ownType(field.X.Type()) {
+						continue
+					}
+					if f := funcOf(v.Val); named(f) {
+						out[f] = model.EntryHanded
+					}
+				case *ssa.MakeInterface:
+					iface, ok := v.Type().Underlying().(*types.Interface)
+					if !ok || iface.NumMethods() == 0 {
+						continue
+					}
+					// A function made a library's type, such as
+					// http.HandlerFunc(serve), and handed over as its interface.
+					if f := funcOf(v.X); named(f) {
+						out[f] = model.EntryHanded
+						continue
+					}
+					if !b.ownType(v.X.Type()) {
+						continue
+					}
+					mset := b.prog.MethodSets.MethodSet(v.X.Type())
+					for m := range iface.Methods() {
+						if commonMethods[m.Name()] {
+							continue
+						}
+						sel := mset.Lookup(m.Pkg(), m.Name())
+						if sel == nil {
+							continue
+						}
+						if f := b.prog.MethodValue(sel); named(f) {
+							if _, handed := out[f]; !handed {
+								out[f] = model.EntryInterface
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	return out
+}
+
+// funcOf returns the function a value is, or closes over. A function given
+// a named func type, such as cli.ActionFunc, is wrapped in a ChangeType.
+func funcOf(v ssa.Value) *ssa.Function {
+	switch v := v.(type) {
+	case *ssa.Function:
+		return v
+	case *ssa.MakeClosure:
+		fn, _ := v.Fn.(*ssa.Function)
+		return fn
+	case *ssa.ChangeType:
+		return funcOf(v.X)
+	}
+	return nil
+}
+
+// ownType reports whether t, or what it points to, is a named type of the
+// module.
+func (b *builder) ownType(t types.Type) bool {
+	if p, ok := t.Underlying().(*types.Pointer); ok {
+		t = p.Elem()
+	}
+	n, ok := types.Unalias(t).(*types.Named)
+	return ok && n.Obj().Pkg() != nil && b.own[n.Obj().Pkg().Path()]
 }
 
 // unwrap looks through the wrappers SSA synthesizes for bound methods,

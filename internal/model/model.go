@@ -128,6 +128,13 @@ type EntryReason string
 
 const (
 	EntryMain EntryReason = "main"
+	// EntryHanded is a function stored in a struct of another module, such
+	// as the Run of an analysis.Analyzer or the Action of a cli.Command. The
+	// library calls it, and nothing in the module does.
+	EntryHanded EntryReason = "handed"
+	// EntryInterface is a method that an interface of another module
+	// requires, such as ServeHTTP, and that nothing in the module calls.
+	EntryInterface EntryReason = "interface"
 	// EntryUncalled is an exported function that nothing in the module calls.
 	EntryUncalled EntryReason = "uncalled"
 )
