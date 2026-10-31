@@ -6,7 +6,7 @@ pkgsight draws a Go module in the browser: a package map, the functions inside a
 
 | Path | Role |
 | --- | --- |
-| `cmd/pkgsight` | The commands, on urfave/cli v3. `main.go` assembles them, and each command has a file of its own |
+| `cmd/pkgsight` | The commands, on urfave/cli v3. `main.go` assembles them, each command has a file of its own, and `utils.go` holds what they share |
 | `internal/load` | The package graph, from `go list -json` |
 | `internal/callgraph` | The call graph, from SSA with VTA, and the queries the API serves |
 | `internal/notes` | The notes store: one JSON file per language, and the placement of line notes |

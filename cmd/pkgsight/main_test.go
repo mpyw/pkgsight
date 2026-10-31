@@ -3,65 +3,9 @@ package main
 import (
 	"bytes"
 	"context"
-	"io"
-	"regexp"
 	"strings"
-	"sync"
 	"testing"
-	"time"
 )
-
-//declscope:shared // every command's tests run against it
-const sample = "../../internal/callgraph/testdata/sample"
-
-// lockedBuffer collects what the server logs from several goroutines.
-//
-//declscope:shared // serve_test.go reads the server's log through it
-type lockedBuffer struct {
-	//declscope:private // only its methods touch it
-	mu sync.Mutex
-	//declscope:private // only its methods touch it
-	buf bytes.Buffer
-}
-
-func (b *lockedBuffer) Write(p []byte) (int, error) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.buf.Write(p)
-}
-
-func (b *lockedBuffer) String() string {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.buf.String()
-}
-
-// waitFor polls the log until pattern matches, and returns the first group.
-//
-//declscope:shared // serve_test.go waits for the server through it
-func waitFor(t *testing.T, log *lockedBuffer, pattern string) string {
-	t.Helper()
-	re := regexp.MustCompile(pattern)
-	deadline := time.Now().Add(30 * time.Second)
-	for time.Now().Before(deadline) {
-		if m := re.FindStringSubmatch(log.String()); m != nil {
-			if len(m) > 1 {
-				return m[1]
-			}
-			return m[0]
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	t.Fatalf("no %q in the log:\n%s", pattern, log.String())
-	return ""
-}
-
-// pkgsight runs the command line args, without the program name.
-//
-//declscope:shared // every command's tests run through it
-func pkgsight(ctx context.Context, stdout, stderr io.Writer, args ...string) int {
-	return run(ctx, append([]string{"pkgsight"}, args...), stdout, stderr)
-}
 
 func TestRunCommands(t *testing.T) {
 	tests := []struct {
