@@ -3,14 +3,14 @@ name: declscope-adoption
 description: Adopt declscope on an existing Go codebase and drive its diagnostics to zero. Read this when introducing declscope to a repository, when choosing its configuration, when running declscope shrink for the first time, or when clearing a declscope baseline. Covers sizing each rule before enabling it, reading the diagnostics as structure, the remedy for each shape, and the measurement traps that produce false confidence. For writing new code in a repository that already runs declscope, use declscope-authoring.
 license: MIT
 x-embedded-by: declscope
-x-embedded-version: 0.24.1
-x-embedded-at: "2026-10-30T21:23:30Z"
-x-embedded-digest: "sha256:95b89ae2e7904a1bd4e000c3cb254645ae22dc91c52f1bf12a04d518dc97ea8e"
+x-embedded-version: 0.24.2
+x-embedded-at: "2026-11-05T22:26:21Z"
+x-embedded-digest: "sha256:f18505e995e9ce41734e28044012b0fbe3e961e0434de31beaf2ae615dfc6e95"
 ---
 
 # Adopting declscope
 
-Written against **declscope 0.24.1**. Check the version first with `declscope -V=full`: this describes how that release behaves, not how an older one does.
+Written against **declscope 0.24.2**. Check the version first with `declscope -V=full`: this describes how that release behaves, not how an older one does.
 
 **Read [the README](https://github.com/mpyw/declscope#readme) before the first decision.** This skill covers what to do about the diagnostics. What each directive means, and what the config accepts, is there.
 
