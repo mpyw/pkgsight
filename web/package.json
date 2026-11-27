@@ -16,7 +16,7 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
-    "@xyflow/react": "^12.12.1",
+    "@xyflow/react": "^13.0.2",
     "elkjs": "^0.12.1",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
